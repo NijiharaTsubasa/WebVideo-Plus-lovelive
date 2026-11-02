@@ -2,6 +2,12 @@
 
 当前维护版本：
 
+- [1.3.9 · Terre 4.6.6](RELEASE_NOTES_1.3.9.md)
+- [1.1.16 · Terre 4.6.4 / MyGO 3.2.1](RELEASE_NOTES_1.1.16.md)
+- [Craft 1.2.1c · Craft 1.0.0](RELEASE_NOTES_CRAFT_1.2.1c.md)
+
+此前版本：
+
 - [1.3.8 · Terre 4.6.6](RELEASE_NOTES_1.3.8.md)
 - [1.1.15 · Terre 4.6.4 / MyGO 3.2.1](RELEASE_NOTES_1.1.15.md)
 
