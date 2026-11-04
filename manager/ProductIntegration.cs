@@ -22,7 +22,35 @@ namespace NativeVideo {
    prefix+="const WebVideoUpdateContext="+J.Text(updateContext??J.O("productVersion",ProductVersion,"engineId","","engineVersion",""))+";\n"+File.ReadAllText(Path.Combine(Files.Root,"product-ui/update-check.js"))+"\n";
    source=Once(source,"jsxRuntimeExports.jsx(FastPreviewTimeoutDialog,{})","jsxRuntimeExports.jsx(WebVideoRuntimeHost,{}),jsxRuntimeExports.jsx(FastPreviewTimeoutDialog,{})");
    if(modules.Contains("sharedAssets")){
-    source=Once(source,"function Assets({","function WebVideoLocalAssets({");foreach(var patch in J.A(J.Read(Path.Combine(Files.Root,"product-ui/shared-assets-patches.json"))))source=RegexOnceInScope(source,J.S(patch,"scopeStart"),J.S(patch,"scopeEnd"),J.S(patch,"regex",Regex.Escape(J.S(patch,"find"))),J.S(patch,"replace"),J.S(patch,"mygoRegex"),J.S(patch,"mygoReplace"));prefix+=File.ReadAllText(Path.Combine(Files.Root,"product-ui/shared-assets.js")).Replace("__WEBVIDEO_SHARED_ENABLED__","true")+"\n";
+    source=Once(source,"function Assets({","function WebVideoLocalAssets({");bool gltfPicker=source.Contains("function GltfFigurePicker(");
+    foreach(var patch in J.A(J.Read(Path.Combine(Files.Root,"product-ui/shared-assets-patches.json")))){
+     if(gltfPicker&&J.S(patch,"scopeStart")=="function ChangeFigure("&&new[]{"WebVideoSharedMaterials.useFigureMetadata","WebVideoModelOptions","WebVideoFigureAddress"}.Any(J.S(patch,"replace").Contains))continue;
+     if(gltfPicker&&J.S(patch,"scopeStart")=="function WebVideoLocalAssets({")continue;
+     if(gltfPicker&&J.S(patch,"scopeStart")=="function ChooseFile(")continue;
+     source=RegexOnceInScope(source,J.S(patch,"scopeStart"),J.S(patch,"scopeEnd"),J.S(patch,"regex",Regex.Escape(J.S(patch,"find"))),J.S(patch,"replace"),J.S(patch,"mygoRegex"),J.S(patch,"mygoReplace"));}
+    if(gltfPicker){
+     source=RegexOnceInScope(source,"function WebVideoLocalAssets({","function FileUploader(",
+      @"(?<options>chooseModelDirectory:[\w$]+=!1)\}\)\{","${options},webVideoPathChanged:__wvpPathChanged}){");
+     source=RegexOnceInScope(source,"function WebVideoLocalAssets({","function FileUploader(",
+      @"(?<state>(?<path>[\w$]+)=useValue\(\[\.\.\.[\w$]+,\.\.\.[\w$]+\.slice\(0,-1\)\]\)),",
+      "${state},__wvpNotifyPath=reactExports.useEffect(()=>{__wvpPathChanged?.(${path}.value)},[${path}.value]),");
+     source=RegexOnceInScope(source,"function ChooseFile(","var commandType",@",!(?<validate>[\w$]+)\((?<file>[\w$]+)\.path\)\)return;",",!WebVideoSharedMaterials.isResourceUrl(${file}.path)&&!${validate}(${file}.path))return;");
+     source=RegexOnceInScope(source,"function GltfFigurePicker(","function ChangeFigure(",@"axios\$1\.post\(""/api/manageGame/selectGltfModel"",","WebVideoSelectGltfModel(");
+     source=RegexOnceInScope(source,"function GltfFigurePicker(","function ChangeFigure(",@"axios\$1\.get\((?<local>\`/games/\$\{encodeURIComponent\([\w$]+\)\}/game/3d/figure/\$\{(?<path>[\w$]+)\}\`)\)","axios$$1.get(WebVideoSharedMaterials.isResourceUrl(${path})?${path}:${local})");
+     source=RegexOnceInScope(source,"function ChangeFigure(","function Bgm(",@"axios\$1\.get\((?<local>\`/games/\$\{encodeURIComponent\([\w$]+\)\}/game/3d/figure/\$\{(?<path>[\w$]+)\}\`),","axios$$1.get(WebVideoSharedMaterials.isResourceUrl(${path})?${path}:${local},");
+     source=RegexOnceInScope(source,"function ChangeFigure(","function Bgm(",
+      @"(?<picker>jsxRuntimeExports\.jsx\(SearchableCascader,\{optionList:[\w$]+,optionDescriptions:(?<enabled>[\w$]+)\?[^,]+,value:[\w$]+\.value,onOpen:[^,]+,onValueChange:(?<change>[\w$]+=>\{[^}]+\})\}\))",
+      @"jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment,{children:[${picker},${enabled}&&jsxRuntimeExports.jsx(WebVideoSharedNamedPicker,{kind:""motion"",onValueChange:${change}})]})");
+     source=RegexOnceInScope(source,"function ChangeFigure(","function Bgm(",
+      @"(?<picker>jsxRuntimeExports\.jsx\(GltfExpressionPicker,\{native:[\w$]+,live2d:[\w$]+,supportsLive2D:(?<enabled>[\w$]+),value:[\w$]+\.value,onOpen:[^,]+,onValueChange:(?<change>[\w$]+=>\{[^}]+\})\}\))",
+      @"jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment,{children:[${picker},${enabled}&&jsxRuntimeExports.jsx(WebVideoSharedNamedPicker,{kind:""expression"",onValueChange:${change}})]})");
+     int figureStart=source.IndexOf("function ChangeFigure(",StringComparison.Ordinal);
+     int figureEnd=source.IndexOf("function Bgm(",figureStart,StringComparison.Ordinal);
+     string figure=source.Substring(figureStart,figureEnd-figureStart);
+     figure=Regex.Replace(figure,@"(?<local>`/games/\$\{[\w$]+\}/game/figure/\$\{(?<path>[\w$]+)\}`)","WebVideoSharedMaterials.isResourceUrl(${path})?${path}:${local}");
+     source=source.Substring(0,figureStart)+figure+source.Substring(figureEnd);
+    }
+    prefix+=File.ReadAllText(Path.Combine(Files.Root,"product-ui/shared-assets.js")).Replace("__WEBVIDEO_SHARED_ENABLED__","true")+"\n";
    }
    if(ModuleCatalog.NeedsKernel(modules)){
     foreach(var patch in J.A(J.Read(Path.Combine(Files.Root,"product-ui/character-map-patches.json"))))source=Once(source,J.S(patch,"find"),J.S(patch,"replace"));

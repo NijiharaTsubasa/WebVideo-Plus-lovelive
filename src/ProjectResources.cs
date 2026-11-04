@@ -51,7 +51,16 @@ namespace NativeVideo {
     stage=Files.Under(games,".webvideo-create-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(stage);
     if(!mount&&derivative!="")ExternalEngines.CopyShell(source,stage);
     string game=Path.Combine(stage,"game");Directory.CreateDirectory(game);var omit=new HashSet<string>(new[]{"figure","background","bgm","vocal","video","scene"},StringComparer.OrdinalIgnoreCase);
-    foreach(string folder in Directory.GetDirectories(Path.Combine(source,"game"))){string part=Path.GetFileName(folder);if(skip&&omit.Contains(part)||part=="template"&&!J.B(data,"ignoreTemplate"))continue;Files.CopyTree(folder,Path.Combine(game,part));}
+    foreach(string folder in Directory.GetDirectories(Path.Combine(source,"game"))){
+     string part=Path.GetFileName(folder);
+     if(skip&&omit.Contains(part)||part=="template"&&!J.B(data,"ignoreTemplate"))continue;
+     if(skip&&part=="3d"&&EngineAdapter.IsLoveLiveProject(source)){
+      string runtime=Path.Combine(folder,"runtime");
+      if(Directory.Exists(runtime))Files.CopyTree(runtime,Path.Combine(game,"3d/runtime"));
+      continue;
+     }
+     Files.CopyTree(folder,Path.Combine(game,part));
+    }
     foreach(string file in Directory.GetFiles(Path.Combine(source,"game")))Files.CopyFile(file,Path.Combine(game,Path.GetFileName(file)));
     foreach(string kind in new[]{"figure","background","bgm","vocal","video","scene","tex","animation"})Directory.CreateDirectory(Path.Combine(game,kind));
     if(skip)Files.Atomic(Path.Combine(game,"scene/start.txt"),":;\n");

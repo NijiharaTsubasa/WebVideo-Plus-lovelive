@@ -3,6 +3,53 @@ namespace NativeVideo {
  public sealed partial class SharedAssets {
   public static readonly string[] Kinds={"figure","background","bgm","vocal","video"};
   public const string Prefix="__shared/";
+  internal string FindDefaultMotion(string modelReference,string name){
+   if(string.IsNullOrWhiteSpace(name)||Regex.IsMatch(name,@"^(?:[a-z][a-z\d+.-]*:|[/\\])",RegexOptions.IgnoreCase))return null;
+   var id=modelReference.Substring(Prefix.Length).Split('/')[0];
+   var root=J.S(Library(id),"root");
+   var paths=name.EndsWith(".motionbin",StringComparison.Ordinal)?new[]{"motion/"+name}
+    :new[]{"mtn_exp/"+name+".mtn","motion/"+name+".motionbin"};
+   foreach(var path in paths)foreach(var prefix in new[]{"3d/",""}){
+    var relative=Relative(prefix+Uri.UnescapeDataString(path));
+    var file=Files.Under(root,relative);
+    NoLinks(root,file);
+    if(File.Exists(file))return Prefix+id+"/"+relative;
+   }
+   return null;
+  }
+  internal static string GltfNamedKind(string reference){
+   if(!reference.StartsWith(Prefix,StringComparison.Ordinal))return null;
+   if(reference.EndsWith(".motionbin",StringComparison.Ordinal))return "motion";
+   return Regex.IsMatch(reference,@"^__shared/[^/]+/(?:3d/)?mtn_exp/.+\.(mtn|exp\.json)$")?"mtn_exp":null;
+  }
+  public object GltfNamedResources(){
+   var result=new List<object>();
+   foreach(var library in Current().Where(l=>J.S(l,"kind")=="all")){
+    string root=J.S(library,"root"),id=J.S(library,"id");
+    foreach(var folder in new[]{"3d/motion","3d/mtn_exp","motion","mtn_exp"}){
+     var directory=Files.Under(root,folder);
+     if(!Directory.Exists(directory))continue;
+     var pending=new Stack<string>();pending.Push(directory);
+     while(pending.Count>0){
+      var current=pending.Pop();
+      NoLinks(root,current);
+      foreach(var child in Directory.GetDirectories(current))
+       if((File.GetAttributes(child)&FileAttributes.ReparsePoint)==0)pending.Push(child);
+      foreach(var file in Directory.GetFiles(current)){
+       if((File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0)continue;
+       var path=file.Substring(root.TrimEnd('/','\\').Length+1).Replace('\\','/');
+       var reference=Prefix+id+"/"+path;
+       var kind=GltfNamedKind(reference);
+       if(kind==null||!folder.EndsWith(kind,StringComparison.Ordinal))continue;
+       result.Add(J.O("name",J.S(library,"name")+"/"+path,
+        "url",HttpPrefix+string.Join("/",reference.Substring(Prefix.Length).Split('/').Select(Uri.EscapeDataString)),
+        "type",path.EndsWith(".exp.json",StringComparison.Ordinal)?"expression":"motion"));
+      }
+     }
+    }
+   }
+   return result;
+  }
   readonly string registry;readonly object gate=new object();readonly string[] protectedRoots;
   readonly Dictionary<string,object> completedCopies=new Dictionary<string,object>();
   public SharedAssets(string file,params string[] protectedRoots){registry=Files.Full(file);this.protectedRoots=protectedRoots.Where(p=>!string.IsNullOrWhiteSpace(p)).Select(Files.Full).ToArray();}
@@ -28,6 +75,6 @@ namespace NativeVideo {
   public void CheckDependency(string parent,string child,string libraryId=null){var library=libraryId==null?Current().Where(l=>Files.Within(J.S(l,"root"),parent,true)).OrderByDescending(l=>J.S(l,"root").Length).FirstOrDefault():Library(libraryId);if(library==null)throw new IOException("共享素材来源未登记");if(!Files.Within(J.S(library,"root"),parent,true))throw new IOException("素材路径超出共享文件夹");NoLinks(J.S(library,"root"),child);}
   public object List(string id,string relative){var library=Library(id);string root=J.S(library,"root");if(!Directory.Exists(root))throw new IOException("共享素材来源不可用："+J.S(library,"name"));relative=Relative(relative).TrimEnd('/');string folder=relative==""?root:Files.Under(root,relative);NoLinks(root,folder);if(!Directory.Exists(folder))throw new IOException("共享素材文件夹不存在");var entries=new DirectoryInfo(folder).EnumerateFileSystemInfos().Where(p=>!p.Name.StartsWith(".")).Select(p=>{var attributes=p.Attributes;if((attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("请选择实体素材文件夹");bool dir=(attributes&FileAttributes.Directory)!=0;return J.O("name",p.Name,"isDir",dir,"path",(relative==""?"":relative+"/")+p.Name,"extName",p.Extension.ToLowerInvariant(),"size",dir?0:((FileInfo)p).Length,"lastModified",new DateTimeOffset(p.LastWriteTimeUtc).ToUnixTimeMilliseconds());}).OrderBy(e=>J.B(e,"isDir")?0:1).ThenBy(e=>J.S(e,"name"),StringComparer.CurrentCultureIgnoreCase).ToArray();NoLinks(root,folder);return J.O("entries",entries,"library",library,"path",relative);}
   public static string SafeCopyName(string value){value=Regex.Replace(value??"","[\\x00-\\x1f<>:\"/\\\\|?*;#%&@]","_").Trim().TrimEnd('.',' ');if(string.IsNullOrWhiteSpace(value)||value=="__shared"||Regex.IsMatch(value,@"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$",RegexOptions.IgnoreCase))value="共享素材副本";return value.Length>100?value.Substring(0,100):value;}
-  public object Copy(string requestId,string project,string kind,string reference,string name,string temporaryRoot,EngineAdapter adapter){Guid parsed;if(!Guid.TryParse(requestId,out parsed))throw new ArgumentException("复制请求编号无效");string key=parsed.ToString("N"),signature=Files.HashText(project+"|"+kind+"|"+reference+"|"+name);lock(gate){object previous;if(completedCopies.TryGetValue(key,out previous)){if(J.S(previous,"signature")!=signature)throw new IOException("复制请求编号已用于另一份素材");return J.Get(previous,"result");}Kind(kind);string file=Resolve(kind,reference);string[] parts=reference.Substring(Prefix.Length).Split(new[]{'/'},2);string stem=SafeCopyName(string.IsNullOrWhiteSpace(name)?Path.GetFileNameWithoutExtension(file):name),stage=Path.Combine(temporaryRoot,"shared-copy-"+Guid.NewGuid().ToString("N"));try{var assets=new ProjectAssets(project,stage,adapter.Source,"",null,adapter){Shared=this};assets.CollectShared(kind,reference);string basePath=Path.Combine(stage,"game",kind,Prefix.Replace('/',Path.DirectorySeparatorChar),parts[0]);assets.CopyShared();string targetParent=Path.Combine(project,"game",kind);NoLinks(project,targetParent);Directory.CreateDirectory(targetParent);string copyName=stem;int index=2;while(Directory.Exists(Path.Combine(targetParent,copyName))||File.Exists(Path.Combine(targetParent,copyName)))copyName=stem+" ("+(index++)+")";Directory.Move(basePath,Path.Combine(targetParent,copyName));var result=J.O("reference",copyName+"/"+parts[1],"name",copyName,"kind",kind);completedCopies[key]=J.O("signature",signature,"result",result);return result;}finally{if(Directory.Exists(stage))Files.DeleteTree(temporaryRoot,stage);}}}
+  public object Copy(string requestId,string project,string kind,string reference,string name,string temporaryRoot,EngineAdapter adapter){Guid parsed;if(!Guid.TryParse(requestId,out parsed))throw new ArgumentException("复制请求编号无效");string key=parsed.ToString("N"),signature=Files.HashText(project+"|"+kind+"|"+reference+"|"+name);lock(gate){object previous;if(completedCopies.TryGetValue(key,out previous)){if(J.S(previous,"signature")!=signature)throw new IOException("复制请求编号已用于另一份素材");return J.Get(previous,"result");}Kind(kind);string file=Resolve(kind,reference);string[] parts=reference.Substring(Prefix.Length).Split(new[]{'/'},2);string stem=SafeCopyName(string.IsNullOrWhiteSpace(name)?Path.GetFileNameWithoutExtension(file):name),stage=Path.Combine(temporaryRoot,"shared-copy-"+Guid.NewGuid().ToString("N"));try{var assets=new ProjectAssets(project,stage,adapter.Source,"",null,adapter){Shared=this};assets.CollectShared(kind,reference);string localKind=adapter.IsLoveLive&&kind=="figure"&&ProjectAssets.IsGltfPackage(file)?"3d/figure":kind;string basePath=Path.Combine(stage,"game",localKind,Prefix.Replace('/',Path.DirectorySeparatorChar),parts[0]);assets.CopyShared();assets.LocalizeCopiedDefaultMotions();string targetParent=Path.Combine(project,"game",localKind);NoLinks(project,targetParent);Directory.CreateDirectory(targetParent);string copyName=stem;int index=2;while(Directory.Exists(Path.Combine(targetParent,copyName))||File.Exists(Path.Combine(targetParent,copyName)))copyName=stem+" ("+(index++)+")";Directory.Move(basePath,Path.Combine(targetParent,copyName));var result=J.O("reference",copyName+"/"+parts[1],"name",copyName,"kind",localKind);completedCopies[key]=J.O("signature",signature,"result",result);return result;}finally{if(Directory.Exists(stage))Files.DeleteTree(temporaryRoot,stage);}}}
  }
 }

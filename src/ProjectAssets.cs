@@ -5,6 +5,111 @@ namespace NativeVideo {
   public SharedAssets Shared;readonly Dictionary<string,string> sharedScanHashes=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
   public readonly string Project,Root,Engine;public string Script;public object Parsed,Presentation;public readonly Dictionary<string,object> Media=new Dictionary<string,object>(),Animations=new Dictionary<string,object>();public Action<object> Log;public readonly EngineAdapter Adapter;public readonly Dictionary<string,object> AggregateCounts=new Dictionary<string,object>();readonly Dictionary<string,string> copies=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);readonly Dictionary<string,object> issues=new Dictionary<string,object>();readonly Dictionary<string,object> warnings=new Dictionary<string,object>();readonly List<object> actions=new List<object>();readonly HashSet<string> checkedFiles=new HashSet<string>(StringComparer.OrdinalIgnoreCase);readonly HashSet<string> visits=new HashSet<string>();sealed class ModelDependencies {public string[] Children,ModelChildren,Libraries;public bool Container;}readonly Dictionary<string,ModelDependencies> dependencyCache=new Dictionary<string,ModelDependencies>(StringComparer.OrdinalIgnoreCase);readonly HashSet<string> requiredLibraries=new HashSet<string>(StringComparer.OrdinalIgnoreCase);readonly List<object> libraries=new List<object>();
   static readonly Regex Resource=new Regex(@"\.(jsonl|wmdl|json|moc3?|mtn|png|jpe?g|webp|gif|mp3|wav|ogg|m4a|aac|flac|mp4|webm|mov|mkv|ttf|woff2?)([?#].*)?$",RegexOptions.IgnoreCase);
+  internal static bool IsGltfPackage(string file){
+   return Path.GetFileName(file).Equals("config.json",StringComparison.OrdinalIgnoreCase)
+    && J.A(J.Get(J.TryRead(file),"components")).Any(component=>J.S(component,"type")=="model");
+  }
+  Dictionary<string,string[]> gltfRuntime;
+  Dictionary<string,string[]> GltfRuntime(){
+   if(gltfRuntime!=null)return gltfRuntime;
+   var entries=new Dictionary<string,string[]>(StringComparer.Ordinal);
+   var root=Path.Combine(Project,"game/3d/runtime");
+   var index=J.TryRead(Path.Combine(root,"index.json"));
+   foreach(var path in J.A(J.Get(index,"packages"))){
+    var file=Files.Under(root,Convert.ToString(path));
+    SharedAssets.NoLinks(root,file);
+    foreach(var component in J.A(J.Get(J.Read(file),"components"))){
+     var type=J.S(component,"type");var name=J.S(component,"name");
+     if(type=="behavior")name=J.S(component,"namespace")+"."+name;
+     var sources=new[]{J.S(component,"script"),J.S(component,"src")}.Where(source=>source!=""&&!External(source)&&!source.StartsWith("data:",StringComparison.OrdinalIgnoreCase));
+     var targets=sources.Select(source=>Files.Full(Path.Combine(Path.GetDirectoryName(file),PhysicalName(source)))).ToArray();
+     entries.Add(type+":"+name,targets);
+    }
+   }
+   return gltfRuntime=entries;
+  }
+  void CollectSharedGltf(string reference,string config){
+   try{
+    var dependencies=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    Action<string,string> collect=(parent,uri)=>{
+     if(string.IsNullOrEmpty(uri)||uri.StartsWith("data:",StringComparison.OrdinalIgnoreCase)||External(uri))return;
+     var file=Files.Full(Path.Combine(Path.GetDirectoryName(parent),PhysicalName(uri)));
+     Shared.CheckDependency(config,file,reference.Substring(SharedAssets.Prefix.Length).Split('/')[0]);
+     if(!File.Exists(file))throw new FileNotFoundException("找不到模型依赖",uri);
+     dependencies.Add(file);
+    };
+    var required=new HashSet<string>(StringComparer.Ordinal);
+    foreach(var component in J.A(J.Get(J.Read(config),"components")).Where(c=>J.S(c,"type")=="model")){
+     if(J.S(component,"role")!="head"){
+      var defaultMotion=J.S(component,"defaultMotion");
+      var relative=defaultMotion.StartsWith("./",StringComparison.Ordinal)||defaultMotion.StartsWith("../",StringComparison.Ordinal);
+      if(relative)collect(config,defaultMotion);
+      var motion=relative?null:Shared.FindDefaultMotion(reference,defaultMotion);
+      if(motion!=null){
+       var file=Shared.ResourceFile(motion);
+       Shared.CheckDependency(config,file,reference.Substring(SharedAssets.Prefix.Length).Split('/')[0]);
+       dependencies.Add(file);
+       var stagedConfig=Files.Under(Path.Combine(Root,"game/3d/figure"),reference);
+       var stagedMotion=Files.Under(Path.Combine(Root,"game/3d/figure"),motion);
+       copiedDefaultMotions[stagedConfig]=stagedMotion;
+      }
+     }
+     var profile=J.S(component,"renderProfile");
+     if(profile!="")required.Add("render-profile:"+profile);
+     foreach(var behavior in J.A(J.Get(component,"behaviors")))
+      if(J.Get(behavior,"required")==null||J.B(behavior,"required"))required.Add("behavior:"+J.S(behavior,"name"));
+     var model=J.S(component,"model");
+     collect(config,model);
+     var glb=Files.Full(Path.Combine(Path.GetDirectoryName(config),PhysicalName(model)));
+     if(!dependencies.Contains(glb))continue;
+     using(var reader=new BinaryReader(File.OpenRead(glb))){
+      if(reader.ReadUInt32()!=0x46546c67||reader.ReadUInt32()!=2)throw new IOException("模型不是 GLB 2.0");
+      reader.ReadUInt32();var length=reader.ReadInt32();
+      if(reader.ReadUInt32()!=0x4e4f534a||length<0||length>reader.BaseStream.Length-reader.BaseStream.Position)throw new IOException("GLB JSON 数据无效");
+      var document=J.Parse(System.Text.Encoding.UTF8.GetString(reader.ReadBytes(length)));
+      foreach(var material in J.A(J.Get(document,"materials"))){
+       var shader=J.S(J.Get(material,"extras"),"shader");
+       if(shader!="")required.Add("shader:"+shader);
+      }
+      foreach(var key in new[]{"images","buffers"})
+       foreach(var value in J.A(J.Get(document,key)))collect(glb,J.S(value,"uri"));
+     }
+    }
+    foreach(var dependency in required){
+     string[] files;
+     if(!GltfRuntime().TryGetValue(dependency,out files)||files.Any(file=>!File.Exists(file)))
+      throw new IOException("当前工程缺少 3D 运行时依赖："+dependency);
+     foreach(var file in files)SharedAssets.NoLinks(Project,file);
+    }
+    var segments=reference.Split(new[]{'/'},StringSplitOptions.RemoveEmptyEntries);
+    var libraryRoot=Files.Under(Path.Combine(Root,"game/3d/figure"),string.Join("/",segments.Take(2)));
+    var sourceRoot=config;
+    for(int i=2;i<segments.Length;i++)sourceRoot=Path.GetDirectoryName(sourceRoot);
+    foreach(var file in dependencies.Concat(new[]{config})){
+     var relative=file.Substring(sourceRoot.TrimEnd('\\','/').Length+1);
+     var destination=Files.Under(libraryRoot,relative);
+     string previous;
+     if(!copies.TryGetValue(destination,out previous)&&File.Exists(destination))previous=destination;
+     string hash;
+     if(!sharedScanHashes.TryGetValue(file,out hash))hash=Files.Hash(file);
+     if(previous!=null&&!string.Equals(previous,file,StringComparison.OrdinalIgnoreCase)&&Files.Hash(previous)!=hash)
+      throw new IOException("共享模型依赖与工程中的文件重名："+relative);
+     sharedScanHashes[file]=hash;
+     copies[destination]=file;
+    }
+   }catch(Exception e){Add("unsupported",0,reference,"无法收集共享 3D 模型："+e.Message);}
+  }
+  readonly Dictionary<string,string> copiedDefaultMotions=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+  internal void LocalizeCopiedDefaultMotions(){
+   foreach(var pair in copiedDefaultMotions){
+    var config=J.Read(pair.Key);
+    var from=new Uri(Path.GetDirectoryName(pair.Key)+Path.DirectorySeparatorChar);
+    var relative=from.MakeRelativeUri(new Uri(pair.Value)).ToString();
+    foreach(var component in J.A(J.Get(config,"components")).Where(c=>J.S(c,"type")=="model"&&J.S(c,"role")!="head"))
+     J.D(component)["defaultMotion"]=relative.StartsWith("../",StringComparison.Ordinal)?relative:"./"+relative;
+    J.Write(pair.Key,config);
+   }
+  }
   public static object AudioLoopPoints(object probe,double durationMs){
    var stream=J.A(J.Get(probe,"streams")).FirstOrDefault(s=>J.S(s,"codec_type")=="audio");
    string codec=J.S(stream,"codec_name");
@@ -117,20 +222,63 @@ namespace NativeVideo {
    if(string.IsNullOrEmpty(name)||name=="none")return;bool modelReference=kind=="figure"&&FigureMayUseModel(name);
    if(External(name)){RequireModelLibraries(name,null,modelReference);AddWarning("external-resource",line,name,"外链素材不会写入本地快照；导出结果依赖当前网络、CORS 与远端内容是否变化。");return;}
    if(Adapter.IsLoveLive&&kind=="figure"&&!External(name)) {
-    string[] parts=Regex.Split(Clean("figure",Clean("3d/figure",name)),@"(?<=config\.json)\+");
+    string[] parts=Regex.Split(name,@"(?<=config\.json)\+",RegexOptions.IgnoreCase)
+     .Select(part=>Clean("figure",Clean("3d/figure",part))).ToArray();
     string figureRoot=Path.Combine(Project,"game/3d/figure");
-    if(parts.All(part=>part.EndsWith("/config.json",StringComparison.OrdinalIgnoreCase)
-        &&File.Exists(Files.Under(figureRoot,PhysicalName(part)))))return;
+    if(parts.All(part=>part.EndsWith("/config.json",StringComparison.OrdinalIgnoreCase))){
+     try{
+      bool found=true;
+      foreach(var part in parts.Select(PhysicalName)){
+       if(File.Exists(Files.Under(figureRoot,part)))continue;
+       if(Shared!=null&&part.StartsWith(SharedAssets.Prefix,StringComparison.Ordinal)){
+        var config=Shared.Resolve(kind,part);
+        if(IsGltfPackage(config))CollectSharedGltf(part,config);else found=false;
+       }else if(!File.Exists(Files.Under(figureRoot,part)))found=false;
+      }
+      if(found)return;
+     }catch(Exception e){Add("missing",line,name,e.Message,action);return;}
+    }
    }
    string reference=name;name=PhysicalName(Clean(kind,name));if(AmbiguousWindowsPath(name)){Add("unsupported",line,name,"资源 URL 的编码空格或查询前空格保留为真实路径字符；Windows 不支持路径段末尾 ASCII 空格，不能替换为无空格文件",action);return;}string target;try{target=Files.Under(Path.Combine(Root,"game"),kind+"/"+name);}catch{RequireModelLibraries(name,null,modelReference);Add("unsupported",line,name,"资源路径超出工程目录");return;}
    string resolved;try{resolved=Resolve(kind,reference);}catch(Exception e){Add("missing",line,name,e.Message,action);return;}
    Inspect(resolved,line,kind+"/"+name,action,target,null,modelReference,name.StartsWith(SharedAssets.Prefix,StringComparison.Ordinal)?name.Substring(SharedAssets.Prefix.Length).Split('/')[0]:null);
   }
-  public void CollectShared(string kind,string reference){if(!PhysicalName(Clean(kind,reference)).StartsWith(SharedAssets.Prefix,StringComparison.Ordinal))return;Ref(kind,reference,0,null);}
+  public void CollectShared(string kind,string reference){
+   if(Shared!=null)reference=Shared.LocalizeSource(reference);
+   var parts=kind=="figure"&&Adapter.IsLoveLive
+    ? Regex.Split(reference??"", @"(?<=config\.json)\+",RegexOptions.IgnoreCase)
+    : new[]{reference};
+   if(parts.Any(part=>PhysicalName(Clean(kind,part)).StartsWith(SharedAssets.Prefix,StringComparison.Ordinal)))
+    Ref(kind,reference,0,null);
+  }
   public void CollectSharedConfig(string text){if(Shared!=null){Shared=Shared.ForHttpSource(text);text=Shared.LocalizeSource(text);}text=Regex.Replace(text??"",@"(?m)^\s*;[^\r\n]*","");foreach(Match match in Regex.Matches(text,@"(?:^|[;\r\n])\s*(Title_img|Title_bgm|Game_Logo)\s*:\s*([^;]*)",RegexOptions.IgnoreCase)){string kind=match.Groups[1].Value.Equals("Title_bgm",StringComparison.OrdinalIgnoreCase)?"bgm":"background",value=Regex.Split(match.Groups[2].Value,@"\s+-")[0].Trim();foreach(string reference in value.Split('|'))CollectShared(kind,reference.Trim());}}
-  void CollectSharedLiteral(string value){string id=value.Substring(SharedAssets.Prefix.Length).Split('/')[0],registered=Shared==null?null:Shared.KindForId(id);if(registered!=null){if(registered!="all")CollectShared(registered,value);else{string file=Shared.Resolve("figure",value),extension=Path.GetExtension(file).ToLowerInvariant();string[] kinds=Regex.IsMatch(extension,@"^\.(jsonl|wmdl|json|moc3?|mtn)$")?new[]{"figure"}:Regex.IsMatch(extension,@"^\.(png|jpe?g|webp|gif|bmp|avif|svg)$")?new[]{"figure","background"}:Regex.IsMatch(extension,@"^\.(mp3|wav|ogg|opus|m4a|aac|flac)$")?new[]{"bgm","vocal"}:Regex.IsMatch(extension,@"^\.(mp4|webm|mov|mkv)$")?new[]{"background","video"}:SharedAssets.Kinds;foreach(string kind in kinds)CollectShared(kind,value);}return;}bool found=false;foreach(string kind in SharedAssets.Kinds){string name=PhysicalName(Clean(kind,value));if(!AmbiguousWindowsPath(name)&&LocalFile(kind,name)!=null){CollectShared(kind,value);found=true;}}if(!found)Add("missing",0,value,"共享素材来源未登记，请重新选择文件夹");}
+  void CollectSharedLiteral(string value){
+   if(Adapter.IsLoveLive&&Shared!=null&&SharedAssets.GltfNamedKind(value)!=null){
+    var kind=SharedAssets.GltfNamedKind(value);
+    var destination=Files.Under(Path.Combine(Root,"game/3d",kind),PhysicalName(value));
+    if(LocalFile("3d/"+kind,PhysicalName(value))!=null)return;
+    try{
+     var file=Shared.ResourceFile(PhysicalName(value));
+     if(!sharedScanHashes.ContainsKey(file))sharedScanHashes[file]=Files.Hash(file);
+     if(File.Exists(destination)&&Files.Hash(destination)!=sharedScanHashes[file])
+      throw new IOException("共享动作或表情与目标文件重名："+value);
+     copies[destination]=file;
+    }
+    catch(Exception e){Add("missing",0,value,e.Message);}
+    return;
+   }
+   if(Adapter.IsLoveLive&&value.EndsWith("/config.json",StringComparison.OrdinalIgnoreCase)
+     &&File.Exists(Files.Under(Path.Combine(Project,"game/3d/figure"),PhysicalName(value))))return;
+   string id=value.Substring(SharedAssets.Prefix.Length).Split('/')[0],registered=Shared==null?null:Shared.KindForId(id);if(registered!=null){if(registered!="all")CollectShared(registered,value);else{string file=Shared.Resolve("figure",value),extension=Path.GetExtension(file).ToLowerInvariant();string[] kinds=Regex.IsMatch(extension,@"^\.(jsonl|wmdl|json|moc3?|mtn)$")?new[]{"figure"}:Regex.IsMatch(extension,@"^\.(png|jpe?g|webp|gif|bmp|avif|svg)$")?new[]{"figure","background"}:Regex.IsMatch(extension,@"^\.(mp3|wav|ogg|opus|m4a|aac|flac)$")?new[]{"bgm","vocal"}:Regex.IsMatch(extension,@"^\.(mp4|webm|mov|mkv)$")?new[]{"background","video"}:SharedAssets.Kinds;foreach(string kind in kinds)CollectShared(kind,value);}return;}bool found=false;foreach(string kind in SharedAssets.Kinds){string name=PhysicalName(Clean(kind,value));if(!AmbiguousWindowsPath(name)&&LocalFile(kind,name)!=null){CollectShared(kind,value);found=true;}}if(!found)Add("missing",0,value,"共享素材来源未登记，请重新选择文件夹");}
   public void CollectSharedSource(string source){if(Shared==null)return;foreach(string reference in Shared.SourceReferences(source).Distinct(StringComparer.Ordinal))CollectSharedLiteral(reference);}
-  public void CollectSharedScene(object parsed){var mapping=new Dictionary<string,string>{{"changeBg","background"},{"changeFigure","figure"},{"miniAvatar","figure"},{"bgm","bgm"},{"playEffect","vocal"},{"playVideo","video"},{"unlockCg","background"},{"unlockBgm","bgm"}};var args=new Dictionary<string,string>{{"vocal","vocal"},{"backgroundImage","background"},{"mouthOpen","figure"},{"mouthClose","figure"},{"mouthHalfOpen","figure"},{"eyesOpen","figure"},{"eyesClose","figure"}};foreach(var sentence in J.A(J.Get(parsed,"sentenceList"))){string command=J.S(sentence,"commandRaw");if(mapping.ContainsKey(command))CollectShared(mapping[command],J.S(sentence,"content"));if(command=="setVar"){string content=J.S(sentence,"content");int equal=content.IndexOf('=');if(equal>=0){string value=content.Substring(equal+1).Trim().Trim('"','\'');if(value.StartsWith(SharedAssets.Prefix,StringComparison.Ordinal)){CollectSharedLiteral(value);}}}var parameters=Params(sentence);foreach(var pair in args)if(parameters.ContainsKey(pair.Key))CollectShared(pair.Value,J.S(parameters,pair.Key));}}
+  void CollectSharedNamedArgs(object parameters){
+   if(!Adapter.IsLoveLive||Shared==null)return;
+   foreach(var key in new[]{"motion","expression"}){
+    var reference=Shared.LocalizeSource(J.S(parameters,key));
+    if(SharedAssets.GltfNamedKind(reference)!=null)CollectSharedLiteral(reference);
+   }
+  }
+  public void CollectSharedScene(object parsed){var mapping=new Dictionary<string,string>{{"changeBg","background"},{"changeFigure","figure"},{"miniAvatar","figure"},{"bgm","bgm"},{"playEffect","vocal"},{"playVideo","video"},{"unlockCg","background"},{"unlockBgm","bgm"}};var args=new Dictionary<string,string>{{"vocal","vocal"},{"backgroundImage","background"},{"mouthOpen","figure"},{"mouthClose","figure"},{"mouthHalfOpen","figure"},{"eyesOpen","figure"},{"eyesClose","figure"}};foreach(var sentence in J.A(J.Get(parsed,"sentenceList"))){string command=J.S(sentence,"commandRaw");if(mapping.ContainsKey(command))CollectShared(mapping[command],J.S(sentence,"content"));if(command=="setVar"){string content=J.S(sentence,"content");int equal=content.IndexOf('=');if(equal>=0){string value=content.Substring(equal+1).Trim().Trim('"','\'');if(value.StartsWith(SharedAssets.Prefix,StringComparison.Ordinal)){CollectSharedLiteral(value);}}}var parameters=Params(sentence);CollectSharedNamedArgs(parameters);foreach(var pair in args)if(parameters.ContainsKey(pair.Key))CollectShared(pair.Value,J.S(parameters,pair.Key));}}
   public object CopyShared(){if(issues.Count>0)throw new IOException(string.Join("；",issues.Values.Select(v=>J.S(v,"file")+"："+J.S(v,"message"))));foreach(var pair in copies)Files.CopyFile(pair.Value,pair.Key);return WriteSharedManifest();}
   string SharedCopiedHash(string source,string copy){string actual=Files.Hash(copy),expected;if(sharedScanHashes.TryGetValue(source,out expected)&&actual!=expected)throw new IOException("共享素材在准备期间已更新，请重新导出："+Path.GetFileName(source));return actual;}
   public object WriteSharedManifest(){var entries=copies.Where(p=>Shared!=null&&Shared.Allowed(p.Value)).OrderBy(p=>p.Key,StringComparer.OrdinalIgnoreCase).Select(p=>J.O("path",p.Key.Substring(Root.Length+1).Replace('\\','/'),"sha256",SharedCopiedHash(p.Value,p.Key))).ToArray();if(entries.Length==0)return null;var result=J.O("schemaVersion",1,"files",entries,"digest",Files.HashText(J.Text(entries)));J.Write(Path.Combine(Root,"shared-assets-manifest.json"),result);return result;}
@@ -160,6 +308,7 @@ namespace NativeVideo {
     int first=Math.Max(0,(int)J.N(s,"startLine",i)),last=Math.Max(first,(int)J.N(s,"endLine",first)),line=first+1,endLine=last+1;
     string cmd=J.N(s,"command",-1)==0?"say":J.S(s,"commandRaw");
     var p=Params(s);
+    CollectSharedNamedArgs(p);
     if(!known.Contains(cmd)){RequireModelLibraries(J.S(s,"content"),null,true);AddWarning("custom-command",line,cmd,"检测到非标准或深度定制引擎指令；WebVideo+ 会按当前运行时执行，但不保证其隐藏状态能够跨 Worker 恢复。");}
     if(RuntimeVariable(J.S(s,"content"))||p.Values.OfType<string>().Any(RuntimeVariable))AddWarning("runtime-variable",line,cmd,"检测到运行时变量插值。导出使用独立临时运行环境，不保证继承玩家存档中的变量值。");
     bool singleLineHint=SingleLineHint(cmd,s,p),convertibleSingleChoose=ConvertibleSingleChoose(cmd,s,p);

@@ -9,8 +9,8 @@ const WebVideoSharedMaterials=(()=>{
  function reference(id,file){return '__shared/'+id+'/'+file;}
  function file(kind,id,entry,url){return {...entry,path:url,isDir:false};}
  function thumbnailUrl(id,name){return resourcePrefix+id+'/'+name.split('/').map(x=>encodeURIComponent(x).replace(/[!'()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase())).join('/');}
- function isResourceUrl(value){return typeof value==='string'&&!!resourcePrefix&&value.startsWith(resourcePrefix);}
- async function resolve(kind,id,entry,signal){const result=await request('/api/shared/resolve',{kind,reference:reference(id,entry.path)},signal);if(!isResourceUrl(result.url))throw Error('共享素材地址无效，请刷新素材列表');return result.url;}
+ function isResourceUrl(value){return typeof value==='string'&&/^http:\/\/127\.0\.0\.1:\d+\/webvideo-shared\/[a-f0-9]{32}\//.test(value);}
+ async function resolve(kind,id,entry,signal){const result=await request('/api/shared/resolve',{kind,reference:reference(id,entry.path)},signal);if(!resourcePrefix||!result.url?.startsWith(resourcePrefix))throw Error('共享素材地址无效，请刷新素材列表');return result.url;}
  function exportGame(project,platform){const key=project+'|'+platform;if(exportsInFlight.has(key))return exportsInFlight.get(key);const pending=request('/api/shared/export',{project,platform,requestId:crypto.randomUUID()},AbortSignal.timeout(1800000)).finally(()=>exportsInFlight.delete(key));exportsInFlight.set(key,pending);return pending;}
  function supported(value){return !/ -|[*#%&?@"<>|:;]/.test(value);}
   let readyPreview=null;const previewWaiters=new Set(),notifyPreview=()=>{for(const check of [...previewWaiters])check();};
@@ -30,7 +30,46 @@ const WebVideoSharedMaterials=(()=>{
   }
   return {enabled,useFigureMetadata:WebVideoUseFigureMetadata,formatFigureReference:WebVideoFormatFigureReference,kinds,request,reference,file,supported,waitPreview,resolve,isResourceUrl,thumbnailUrl,exportGame,setResourcePrefix(value){resourcePrefix=value;}};
 })();
-function Assets(props){const root=props.rootPath??[],base=props.basePath??[],eligible=root[0]==='games'&&root[2]==='game'&&(!base.length||Object.hasOwn(WebVideoSharedMaterials.kinds,base[0]));return reactExports.createElement(eligible?WebVideoSharedAssets:WebVideoLocalAssets,eligible?{...props,key:root[1]+':'+base.join('/')}:props);}
+function Assets(props){const root=props.rootPath??[],base=props.basePath??[],eligible=root[0]==='games'&&root[2]==='game'&&(!base.length||base.join("/")=="3d/figure"||Object.hasOwn(WebVideoSharedMaterials.kinds,base[0]));return reactExports.createElement(eligible?WebVideoSharedAssets:WebVideoLocalAssets,eligible?{...props,key:root[1]+':'+base.join('/')}:props);}
+
+async function WebVideoSelectGltfModel(request){
+ const paths=splitFigureConfigs(request.path);
+ const shared=WebVideoSharedMaterials.isResourceUrl;
+ if(!paths.some(shared))return axios$1.post("/api/manageGame/selectGltfModel",request);
+ const models=await Promise.all(paths.map(async (path,index)=>{
+  const url=shared(path)?path:"/games/"+encodeURIComponent(request.gameName)+"/game/3d/figure/"+path;
+  const parts=figurePartConfig((await axios$1.get(url)).data);
+  if(paths.length===1)return parts;
+  const role=index===0?"head":"body";
+  const selected=parts.find(part=>part.role===role);
+  if(!selected)throw Error(role==="head"?"所选模型包没有头部":"所选模型包没有身体");
+  return [selected];
+ }));
+ const parts=models.flat();
+ if(parts.length===1&&parts[0].role==="integrated")return {data:{role:"integrated"}};
+ const selected=request.role?parts.filter(part=>part.role===request.role):parts;
+ if(!selected.length||selected.some(part=>part.role!=="head"&&part.role!=="body"))throw Error("所选模型包没有所需的模型组件");
+ const error=figureCombinationError(parts.find(part=>part.role==="head"),parts.find(part=>part.role==="body"));
+ return {data:{selectionParts:selected,error}};
+}
+function WebVideoSharedNamedPicker({kind,onValueChange}){
+ const R=reactExports,h=R.createElement;
+ const [rows,setRows]=R.useState(null),[error,setError]=R.useState(''),[busy,setBusy]=R.useState(false);
+ async function open(){
+  if(rows){setRows(null);return;}
+  setBusy(true);setError('');
+  try{const resources=await WebVideoSharedMaterials.request('/api/shared/gltf-named',{});
+   setRows(resources.filter(resource=>resource.type===kind).sort((a,b)=>a.name.localeCompare(b.name)));
+  }catch(error){setError(WebVideoServiceErrors.describe(error).summary);}
+  finally{setBusy(false);}
+ }
+ const label=kind==='motion'?'共享动作':'共享表情';
+ return h(R.Fragment,null,h(Button,{size:'small',disabled:busy,onClick:open},label),
+  rows?.length?h('select',{'aria-label':label,value:'',onChange:event=>{onValueChange(event.target.value);setRows(null);}},
+   h('option',{value:'',disabled:true},label),rows.map(row=>h('option',{key:row.url,value:row.url},row.name))):null,
+  rows&&!rows.length&&h('span',{role:'status'},'共享库中没有可选素材'),
+  error&&h('span',{role:'alert'},error));
+}
 function WebVideoSharedFileList({rootPath,entries,selected,onOpen,onCopy}){
  const R=reactExports,h=R.createElement,viewType=useEditorStore.use.viewType();
  return h('div',{style:{flex:1,minHeight:48,position:'relative'},'aria-label':'共享素材列表',role:'list'},h(AutoSizer,null,({height,width})=>{
@@ -41,12 +80,31 @@ function WebVideoSharedFileList({rootPath,entries,selected,onOpen,onCopy}){
 function WebVideoSharedAssets(props){
  if(!WebVideoSharedMaterials.enabled)return reactExports.createElement(WebVideoLocalAssets,props);
  const R=reactExports,h=R.createElement,M=WebVideoSharedMaterials,base=props.basePath??[],project=props.rootPath[1];const {mutate:refreshLocal}=useSWRConfig();
- const initial=/^(?:(?:figure|background|bgm|vocal|video)\/)?__shared\/([a-f0-9]+)\/(.*)$/.exec((props.selectedFilePath??[]).join('/'));
- const localProps={...props,...((props.selectedFilePath??[]).includes('__shared')?{selectedFilePath:[]}:{}),...(base.includes('__shared')?{basePath:base.slice(0,1)}:{})};
- const [localPath,setLocalPath]=R.useState(base),[libraries,setLibraries]=R.useState([]),[library,setLibrary]=R.useState(initial?.[1]||''),[folder,setFolder]=R.useState(initial?.[2]?.split('/').slice(0,-1).join('/')||''),[entries,setEntries]=R.useState([]),[selected,setSelected]=R.useState(null),[busy,setBusy]=R.useState(false),[error,setError]=R.useState(''),[notice,setNotice]=R.useState(''),[filter,setFilter]=R.useState(''),[refreshKey,setRefreshKey]=R.useState(0),[manage,setManage]=R.useState(false),[copyTargets,setCopyTargets]=R.useState(false),[expanded,setExpanded]=R.useState(null);
- const currentKind=Object.hasOwn(M.kinds,localPath[0])?localPath[0]:null,showShared=!localPath.length||!!currentKind,sharedExpanded=expanded??libraries.length>0;
+ const selectedPath=(props.selectedFilePath??[]).join('/');
+ const remote=/^http:\/127\.0\.0\.1:\d+\/webvideo-shared\/[a-f0-9]{32}\/([a-f0-9]{32})\/(.*)$/.exec(selectedPath);
+ const initial=remote??/^(?:(?:figure|background|bgm|vocal|video)\/)?__shared\/([a-f0-9]+)\/(.*)$/.exec(selectedPath);
+ const initialFolder=initial?.[2]?.split('/').slice(0,props.chooseModelDirectory?undefined:-1).map(part=>{
+  try{return remote?decodeURIComponent(part):part;}catch{return part;}
+ }).join('/')??'';
+ const localProps={...props,...(initial?{selectedFilePath:[]}:{}),...(base.includes('__shared')?{basePath:base.slice(0,1)}:{})};
+ const [localPath,setLocalPath]=R.useState(base),[libraries,setLibraries]=R.useState([]),[library,setLibrary]=R.useState(initial?.[1]||''),[folder,setFolder]=R.useState(initialFolder),[entries,setEntries]=R.useState([]),[selected,setSelected]=R.useState(null),[busy,setBusy]=R.useState(false),[error,setError]=R.useState(''),[notice,setNotice]=R.useState(''),[filter,setFilter]=R.useState(''),[refreshKey,setRefreshKey]=R.useState(0),[manage,setManage]=R.useState(false),[copyTargets,setCopyTargets]=R.useState(false),[expanded,setExpanded]=R.useState(null);
+ const is3D=base.join("/")=="3d/figure",currentKind=is3D?"figure":Object.hasOwn(M.kinds,localPath[0])?localPath[0]:null,showShared=!localPath.length||!!currentKind,sharedExpanded=expanded??libraries.length>0;
  const viewType=useEditorStore.use.viewType(),updateViewType=useEditorStore.use.updateViewType(),sortBy=useEditorStore.use.sortBy(),sortOrder=useEditorStore.use.sortOrder();
  const generation=R.useRef(0),copying=R.useRef(false),pendingCopy=R.useRef(null),previewing=R.useRef(null),alive=R.useRef(true);
+ const [modelPreview,setModelPreview]=R.useState(null);
+ const selectedModel=is3D&&selected?.name==="config.json"?selected.webVideoResourceUrl:null;
+ R.useEffect(()=>{
+  setModelPreview(null);
+  if(!selectedModel)return;
+  const controller=new AbortController();
+  fetch(selectedModel,{signal:controller.signal}).then(response=>response.ok?response.json():null)
+   .then(config=>{
+    if(controller.signal.aborted)return;
+    const models=config?.components?.filter(part=>part.type==="model")??[];
+    setModelPreview(models.find(part=>part.role==="integrated")??models.find(part=>part.role==="head")??models[0]??null);
+   }).catch(()=>{});
+  return ()=>controller.abort();
+ },[selectedModel]);
  R.useEffect(()=>{alive.current=true;return()=>{alive.current=false;generation.current++;previewing.current?.abort();};},[]);
  const run=async action=>{if(copying.current)return;setError('');setNotice('');setBusy(true);try{return await action();}catch(e){if(alive.current&&e.name!=='AbortError')setError(WebVideoServiceErrors.describe(e));}finally{if(alive.current)setBusy(false);}};
  const refresh=async()=>{const result=await M.request('/api/shared/libraries');M.setResourcePrefix(result.resourcePrefix);if(alive.current){setLibraries(result.libraries);if(result.resourceError)setError(WebVideoServiceErrors.describe(Error(result.resourceError)));}return result.libraries;};
@@ -59,15 +117,15 @@ function WebVideoSharedAssets(props){
  const add=()=>run(async()=>{const picked=await M.request('/api/shared/dialog',{});if(picked.canceled)return;const result=await M.request('/api/shared/add',{path:picked.path,kind:'all'});await refresh();setExpanded(true);chooseLibrary(result.id);});
  const referenceKind=entry=>currentKind||(active?.kind!=='all'&&active?.kind)||(/\.(?:mp3|wav|ogg|opus|m4a|aac|flac)$/i.test(entry?.path??'')?'vocal':/\.(?:mp4|webm|mov|mkv)$/i.test(entry?.path??'')?'video':'figure');
  const choose=async entry=>{if(!M.supported(entry.path))throw Error('文件名含剧本保留字符，请调整素材文件名后引用');const kind=referenceKind(entry),url=await M.resolve(kind,library,entry);if(alive.current)props.fileFunction?.open?.(M.file(kind,library,entry,url),'asset');};
- const copy=(entry=selected,kind=currentKind)=>{if(!entry||previewing.current)return;if(!kind){setCopyTargets(true);return;}return run(async()=>{copying.current=true;try{const signature=project+'|'+kind+'|'+library+'|'+entry.path,result=await M.request('/api/shared/copy',{requestId:(pendingCopy.current?.key===signature?pendingCopy.current:pendingCopy.current={key:signature,id:crypto.randomUUID()}).id,project,kind,reference:M.reference(library,entry.path)});pendingCopy.current=null;if(alive.current){setCopyTargets(false);setNotice('已复制到 '+kind+'/'+result.reference);setSelected({...entry,localReference:result.reference,localKind:kind});window.dispatchEvent(new CustomEvent('webvideo:shared-copied',{detail:{project,kind,reference:result.reference}}));await refreshLocal([...props.rootPath,kind].join('/'));}}finally{copying.current=false;}});};
+ const copy=(entry=selected,kind=currentKind)=>{if(!entry||previewing.current)return;if(!kind){setCopyTargets(true);return;}return run(async()=>{copying.current=true;try{const signature=project+'|'+kind+'|'+library+'|'+entry.path,result=await M.request('/api/shared/copy',{requestId:(pendingCopy.current?.key===signature?pendingCopy.current:pendingCopy.current={key:signature,id:crypto.randomUUID()}).id,project,kind,reference:M.reference(library,entry.path)});pendingCopy.current=null;if(alive.current){setCopyTargets(false);setNotice('已复制到 '+result.kind+'/'+result.reference);setSelected({...entry,localReference:result.reference,localKind:result.kind});window.dispatchEvent(new CustomEvent('webvideo:shared-copied',{detail:{project,kind:result.kind,reference:result.reference}}));await refreshLocal([...props.rootPath,...result.kind.split('/')].join('/'));}}finally{copying.current=false;}});};
  const preview=()=>{if(!selected||copying.current||previewing.current)return;const kind=referenceKind(selected),controller=new AbortController(),stopObserving=useEditorStore.subscribe((state,previous)=>{if(previous.isShowPreview&&!state.isShowPreview)controller.abort();});previewing.current=controller;return run(async()=>{const ref=M.reference(library,selected.path);if(!M.supported(ref))throw Error('文件名含剧本保留字符，请调整素材文件名后预览');const url=await M.resolve(kind,library,selected,controller.signal);if(!alive.current||controller.signal.aborted||useEditorStore.getState().subPage!==project)return;await M.waitPreview(project,controller.signal);if(!alive.current||controller.signal.aborted||useEditorStore.getState().subPage!==project)return;const commands={figure:'changeFigure',background:'changeBg',bgm:'bgm',vocal:'playEffect',video:'playVideo'};if(!EditorPreviewClient.setComponentVisibility({showStarter:false,showTitle:false,showMenuPanel:false,isEnterGame:true,isShowLogo:false})||!EditorPreviewClient.runSnippet(commands[kind]+':'+url+';'))throw Error('预览连接已断开，请重试');}).finally(()=>{stopObserving();if(previewing.current===controller)previewing.current=null;});};
  const displayEntries=R.useMemo(()=>{
   if(!library){const names=WebVideoSharedLibraryNames(available);return available.filter(l=>l.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())).map(l=>({name:names.get(l.id),path:l.id,isDir:true,extName:'',sharedLibrary:l,sourceScope:l.kind==='all'?undefined:M.kinds[l.kind]}));}
   const allowed=props.allowedExtNames??(currentKind?({figure:['.png','.jpg','.jpeg','.webp','.json'],background:['.png','.jpg','.jpeg','.webp','.mp4','.webm','.mkv'],bgm:['.mp3','.ogg','.wav','.opus'],vocal:['.mp3','.ogg','.wav','.opus'],video:['.mp4','.webm','.mkv']})[currentKind]:[]);
-  const list=entries.filter(e=>(e.isDir||!allowed.length||allowed.includes(e.extName))&&e.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
+  const list=entries.filter(e=>(e.isDir||(!is3D||e.name==="config.json")&&(!allowed.length||allowed.includes(e.extName)))&&e.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
   list.sort((a,b)=>{if(a.isDir!==b.isDir)return a.isDir?-1:1;const order=sortOrder==='desc'?-1:1;if(sortBy==='size'&&!a.isDir)return order*((a.size??0)-(b.size??0));if(sortBy==='lastModified')return order*((a.lastModified??0)-(b.lastModified??0));return order*a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'});});
   return list.map(e=>({...e,originalPath:e.path,path:referenceKind(e)+'/'+M.reference(library,e.path),...(!e.isDir?{webVideoResourceUrl:M.thumbnailUrl(library,e.path)}:{})}));
- },[entries,library,folder,filter,libraries,currentKind,props.allowedExtNames,sortBy,sortOrder]);
+ },[entries,library,folder,filter,libraries,currentKind,is3D,props.allowedExtNames,sortBy,sortOrder]);
  const openEntry=file=>{if(busy)return;if(file.sharedLibrary){chooseLibrary(file.sharedLibrary.id);return;}setNotice('');setCopyTargets(false);if(file.isDir){setFolder(file.originalPath);setSelected(null);setFilter('');}else setSelected({...file,path:file.originalPath});};
  const button=(text,action,options={})=>h(Button,{size:'small',disabled:busy,onClick:()=>action(),...options},text),toolbar={display:'flex',gap:4,alignItems:'center',padding:4,flexWrap:'wrap'};
  return h('div',{'data-wvp-shared-assets':true,style:{display:'flex',flexDirection:'column',height:'100%',minHeight:0,overflow:'hidden'}},
@@ -78,6 +136,7 @@ function WebVideoSharedAssets(props){
    sharedExpanded&&manage&&active&&h('div',{style:{...toolbar,fontSize:12}},h('span',{style:{flex:'1 1 100%',overflowWrap:'anywhere'}},active.root),button('更换位置',()=>run(async()=>{const picked=await M.request('/api/shared/dialog',{initial:active.root});if(picked.canceled)return;await M.request('/api/shared/relocate',{id:library,path:picked.path});await refresh();setRefreshKey(n=>n+1);})),button('转换本项目旧引用',()=>run(async()=>{const result=await M.request('/api/shared/upgrade-project',{project});setNotice(result.changed?'已转换 '+result.changed+' 个文件，已保留备份':'本项目引用已是当前格式');})),button('取消登记',()=>run(async()=>{if(!window.confirm('取消登记“'+active.name+'”？已引用的素材将暂时不可用。'))return;await M.request('/api/shared/remove',{id:library});chooseLibrary('');setExpanded(null);await refresh();}))),
    sharedExpanded&&h(WebVideoSharedFileList,{rootPath:props.rootPath,entries:displayEntries,selected,onOpen:openEntry,onCopy:file=>{if(busy)return;const entry={...file,path:file.originalPath};setSelected(entry);copy(entry,currentKind);}}),
    sharedExpanded&&!displayEntries.length&&!busy&&h('div',{style:{padding:'4px 8px',fontSize:12,color:'var(--text-weak)'}},library?'当前文件夹为空':'添加共享文件夹'),
+   sharedExpanded&&modelPreview?.preview&&h('img',{src:modelPreview.preview,alt:modelPreview.name,style:{maxHeight:110,objectFit:'contain'}}),
    sharedExpanded&&selected&&h('div',{style:toolbar},button('预览',preview),props.isProtected&&button('引用共享素材',()=>run(()=>choose(selected)),{appearance:'primary'}),!props.isProtected&&button('复制引用路径',()=>run(async()=>{await navigator.clipboard.writeText(await M.resolve(referenceKind(selected),library,selected));setNotice('引用路径已复制');})),button('复制到当前项目',()=>copy()),selected.localReference&&button(props.isProtected?'选择副本':'打开副本',()=>run(()=>props.fileFunction?.open?.({...selected,path:selected.localKind+'/'+selected.localReference,name:selected.localReference},'asset')))),
    sharedExpanded&&copyTargets&&selected&&h('div',{style:toolbar},h('span',{style:{fontSize:12}},'复制到'),Object.entries(M.kinds).map(([kind,label])=>button(label,()=>copy(selected,kind),{key:kind}))),
    notice&&h('div',{role:'status',style:{padding:'4px 8px',fontSize:12}},notice),error&&h('div',{role:'alert',style:{padding:'4px 8px',fontSize:12,color:'var(--danger,#b42318)',overflowWrap:'anywhere'}},h('div',null,error.summary),h('div',{style:{color:'var(--text-weak)',marginTop:4}},error.nextStep),h('details',null,h('summary',null,'技术详情'),h('pre',{style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:'20vh',overflowY:'auto'}},error.technical))),busy&&h('div',{role:'status',style:{padding:'4px 8px',fontSize:12,color:'var(--text-weak)'}},'正在处理…')));

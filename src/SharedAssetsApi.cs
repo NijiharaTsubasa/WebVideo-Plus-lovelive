@@ -16,6 +16,11 @@ namespace NativeVideo {
    if(r.Path=="/api/shared/upgrade-project")return HttpResponse.Data(await Task.Run(()=>UpgradeSharedProject(data)));
    if(r.Path=="/api/shared/export")return HttpResponse.Data(await SharedExport(data));
    if(r.Path=="/api/shared/list")return HttpResponse.Data(SharedStore.List(J.S(data,"id"),J.S(data,"path")));
+   if(r.Path=="/api/shared/gltf-named"){
+    sharedResources.Start();
+    if(sharedResources.Error!=null)throw new IOException(sharedResources.Error);
+    return HttpResponse.Data(await Task.Run(()=>SharedStore.GltfNamedResources()));
+   }
    if(r.Path=="/api/shared/resolve"){sharedResources.Start();if(sharedResources.Error!=null)throw new IOException(sharedResources.Error);return HttpResponse.Data(J.O("url",SharedStore.ResourceUrl(J.S(data,"kind"),J.S(data,"reference"))));}
    if(r.Path=="/api/shared/copy"){string project=SharedProject(J.S(data,"project"));return HttpResponse.Data(await Task.Run(()=>SharedStore.Copy(J.S(data,"requestId"),project,J.S(data,"kind"),J.S(data,"reference"),J.S(data,"name"),workRoot,EngineAdapter.Select(J.O("project",project,"engineRoot",Path.Combine(terreDir,"assets/templates/WebGAL_Template"),"settings",J.O("engine","webgal"))))));}
    if(r.Path=="/api/shared/materialize"){
