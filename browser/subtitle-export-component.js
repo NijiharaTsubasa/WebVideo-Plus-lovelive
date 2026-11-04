@@ -16,11 +16,11 @@ function WebVideoDialogueSubtitles({game,target}){
   if(!open||picking.current)return;const token=++generation.current;setBusy(false);setReady(false);setMessage('正在读取导出设置…');setProblem(null);
   (async()=>{try{
    const conn=await WebVideoServiceErrors.readDiscovery((url,options)=>webVideoExportRequest(url,options,15000,requests.current));if(token!==generation.current)return;connection.current=conn;
-   const cfg=await call('/api/config');const speed=await WebVideoRuntime.readGameSettings(game);if(token!==generation.current)return;
+   const cfg=await call('/api/config',{project:game,scene});const speed=await WebVideoRuntime.readGameSettings(game);if(token!==generation.current)return;
    settings.current={...cfg.settings,...speed,mode:'auto',bgmBaseMode:'auto',segmentCutMode:'auto',manualCutPoints:''};setDirectory(cfg.outputDir);setName((target?.name||'字幕.txt').replace(/\.txt$/i,'')+'.srt');setMessage('');setReady(true);
   }catch(error){if(token===generation.current)fail(error);}})();
   return()=>{generation.current++;for(const c of requests.current)c.abort();};
- },[open,game]);
+ },[open,game,scene]);
  R.useEffect(()=>{
   if(!open||!job?.id||['completed','failed','canceled','needs_attention'].includes(job.state))return;
   let live=true,timer;const poll=async()=>{try{const rows=await call('/api/jobs');if(!live)return;const row=rows.find(row=>row.id===job.id);if(row){setJob(row);setMessage(row.message||'正在生成字幕…');}}catch(error){if(live)fail(error);}if(live)timer=setTimeout(poll,1000);};poll();return()=>{live=false;clearTimeout(timer);};

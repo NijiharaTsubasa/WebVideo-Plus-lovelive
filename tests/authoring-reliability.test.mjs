@@ -74,6 +74,26 @@ for(const version of versions){
   t.put('games/fixture/.webvideo-plus/authoring.json','{"schemaVersion":1,"markers":[]}');await assert.rejects(P.update(p=>{p.markers=[];}),/其他窗口/);assert.equal(P.state().project.markers.length,1);
   await P.activate(null);t.put('games/fixture/.webvideo-plus/authoring.json','{broken');await P.activate('fixture');assert.match(P.state().metadataError,/未覆盖/);await assert.rejects(P.update(p=>p),/未覆盖/);assert.equal(t.get('games/fixture/.webvideo-plus/authoring.json'),'{broken');
  }finally{t.close();}});
+ test(version+' Anogo resolves a composed 3D figure using head expressions and body motions',async()=>{
+  const t=terre(version);try{
+   const put=(name,model)=>t.put('games/fixture/game/3d/figure/'+name+'/config.json',JSON.stringify({components:[{type:'model',...model}]}));
+   put('head',{role:'head',model:'head.glb',expressionGroups:[{type:'face',states:[{name:'喜悦/笑'}]}]});
+   put('body',{role:'body',model:'body.glb',motionGroup:'body-test'});
+   const fetch=t.ctx.fetch;
+   t.ctx.fetch=(url,options)=>url==='/api/manageGame/updateGltfResourceCatalog'
+    ? Promise.resolve({ok:true,json:async()=>({resources:[{type:'motion',name:'motions/idle.motionbin',motionGroup:'shared-test'}]})})
+    : fetch(url,options);
+   await t.ctx.WebVideoProject.activate('fixture');
+   const model=t.model('changeFigure:head/config.json+body/config.json -id=hero;');
+   const plan=await t.ctx.Anogo.compile(JSON.stringify([{角色:'角色',动作:'打招呼',对话:'你好'}]),model,
+    {nameToId:{角色:'hero'}},{lookup:{打招呼:{motion:'motions/idle.motionbin',expression:'喜悦/笑'}}},true);
+   const figure=t.parse(plan.after)[1];
+   assert.equal(figure.content,'head/config.json+body/config.json');
+   assert.equal(figure.args.find(arg=>arg.key==='motion')?.value,'motions/idle.motionbin');
+   assert.equal(figure.args.find(arg=>arg.key==='expression')?.value,'3d:face/'+encodeURIComponent('喜悦/笑'));
+   assert.equal(plan.reviewCount,0);
+  }finally{t.close();}
+ });
  test(version+' concurrent music and authoring saves preserve both disk contracts after reload',async()=>{const t=terre(version);try{
   const P=t.ctx.WebVideoProject;await P.activate('fixture');const music={schemaVersion:2,enabled:true,players:1,tracks:[{id:'track',name:'A',file:'game/bgm/a.ogg',lane:0,startSeconds:1,offsetSeconds:2,durationSeconds:3,volume:55,enabled:false,loop:true,fullLength:false,fadeInSeconds:.2,fadeOutSeconds:.4}]};
   await Promise.all([P.saveMusic(music),P.update(p=>{p.markers.push({id:'coexisting',path:'games/fixture/game/scene/start.txt'});})]);assert.equal(P.state().project.markers[0].id,'coexisting');assert.equal(P.state().project.backups.filter(x=>x.kind==='music').length,1);assert.equal(JSON.parse(t.get('games/fixture/.webvideo-plus/authoring.json')).markers[0].id,'coexisting');assert.deepEqual(JSON.parse(t.get('games/fixture/video-project.json')).tracks,music.tracks);
