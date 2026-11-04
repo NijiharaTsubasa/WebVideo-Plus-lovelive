@@ -11,7 +11,7 @@ fs.writeFileSync(path.join(pkg,'features/modules/generativeAI.js'),fs.readFileSy
 const yamlSource=fs.readFileSync(path.join(root,'vendor/js-yaml-4.1.1.min.js'),'utf8').replace(/\/\/# sourceMappingURL=.*$/gm,'');
 fs.writeFileSync(path.join(pkg,'features/modules/textImport.js'),'(()=>{const exports={},module={exports};\n'+yamlSource+'\nwindow.WebVideoYaml=exports;})();\n'+fs.readFileSync(path.join(root,'browser/anogo-import-core.js'),'utf8')+'\n'+fs.readFileSync(path.join(root,'browser/text-import.js'),'utf8'));
 fs.copyFileSync(path.join(root,'vendor/js-yaml-LICENSE'),path.join(pkg,'LICENSE-js-yaml.txt'));
-fs.writeFileSync(path.join(pkg,'features/modules/idTools.js'),fs.readFileSync(path.join(root,'browser/id-conversion.js'),'utf8')+'\n'+fs.readFileSync(path.join(root,'browser/id-tools.js'),'utf8'));
+fs.writeFileSync(path.join(pkg,'features/modules/idTools.js'),fs.readFileSync(path.join(root,'browser/id-conversion.js'),'utf8')+'\n'+fs.readFileSync(path.join(root,'browser/id-model-character.js'),'utf8')+'\n'+fs.readFileSync(path.join(root,'browser/id-tools.js'),'utf8'));
 for(const file of ['audio.js','workload.js','timeline.js'])fs.copyFileSync(path.join(root,'browser',file),path.join(pkg,'browser',file));
 fs.writeFileSync(path.join(pkg,'integration/terre-export-component.js'),fs.readFileSync(path.join(root,'browser/service-errors.js'),'utf8')+'\n'+fs.readFileSync(path.join(root,'browser/export-component.js'),'utf8')+'\n'+fs.readFileSync(path.join(root,'browser/subtitle-export-component.js'),'utf8'));
 const result=spawnSync(path.join(pkg,'WebVideoPlus.Manager.exe'),['modules'],{encoding:'utf8',windowsHide:true});if(result.status!==0)throw Error(result.stderr||'Module catalog unavailable');const catalog=JSON.parse(result.stdout);

@@ -326,7 +326,7 @@
       "id": "kzm"
     },
     {
-      "names": "二叶葵;二叶 葵;二叶　葵;葵;二葉葵;二葉 葵;二葉　葵;Futaba Aoi;Aoi",
+      "names": "二叶葵;二叶 葵;二叶　葵;葵;二葉葵;二葉 葵;二葉　葵;Futaba Aoi;Aoi;令沢葵;令泽葵",
       "id": "aoi"
     },
     {
@@ -458,10 +458,6 @@
       "id": "hrm"
     },
     {
-      "names": "真姬;Maki",
-      "id": "maki"
-    },
-    {
       "names": "由香;Yuka",
       "id": "yuka"
     },
@@ -548,6 +544,266 @@
     {
       "names": "巴巴恩波神;ばばえんぼさま;Babaenbosama;Babaenbo",
       "id": "bbe"
+    },
+    {
+      "names": "高坂穗乃果;高坂穂乃果;穗乃果;穂乃果",
+      "id": "honoka"
+    },
+    {
+      "names": "绚濑绘里;絢瀬絵里;绘里;絵里",
+      "id": "eli"
+    },
+    {
+      "names": "南小鸟;南ことり;小鸟;ことり",
+      "id": "kotori"
+    },
+    {
+      "names": "园田海未;園田海未;海未",
+      "id": "umi"
+    },
+    {
+      "names": "星空凛;星空凜;凛",
+      "id": "rin"
+    },
+    {
+      "names": "西木野真姬;西木野真姫;真姫;真姬",
+      "id": "maki"
+    },
+    {
+      "names": "东条希;東條希;希",
+      "id": "nozomi"
+    },
+    {
+      "names": "小泉花阳;小泉花陽;花阳;花陽",
+      "id": "hanayo"
+    },
+    {
+      "names": "矢泽妮可;矢澤にこ;妮可;にこ",
+      "id": "nico"
+    },
+    {
+      "names": "高海千歌;千歌",
+      "id": "chika"
+    },
+    {
+      "names": "樱内梨子;桜内梨子;梨子",
+      "id": "riko"
+    },
+    {
+      "names": "松浦果南;果南",
+      "id": "kanan"
+    },
+    {
+      "names": "黑泽黛雅;黒澤ダイヤ;黛雅;ダイヤ",
+      "id": "dia"
+    },
+    {
+      "names": "渡边曜;渡辺曜;渡邊曜;曜",
+      "id": "you"
+    },
+    {
+      "names": "津岛善子;津島善子;善子;ヨハネ",
+      "id": "yoshiko"
+    },
+    {
+      "names": "国木田花丸;國木田花丸;花丸",
+      "id": "hanamaru"
+    },
+    {
+      "names": "小原鞠莉;鞠莉",
+      "id": "mari"
+    },
+    {
+      "names": "黑泽露比;黒澤ルビィ;露比;ルビィ",
+      "id": "ruby"
+    },
+    {
+      "names": "上原步梦;上原歩夢;步梦;歩夢",
+      "id": "ayumu"
+    },
+    {
+      "names": "中须霞;中須かすみ;中須霞;霞",
+      "id": "kasumi"
+    },
+    {
+      "names": "樱坂雫;桜坂しずく;雫",
+      "id": "shizuku"
+    },
+    {
+      "names": "朝香果林;果林",
+      "id": "karin"
+    },
+    {
+      "names": "宫下爱;宮下愛;爱",
+      "id": "ai"
+    },
+    {
+      "names": "近江彼方;彼方",
+      "id": "kanata"
+    },
+    {
+      "names": "优木雪菜;優木せつ菜;雪菜;せつ菜;中川菜菜;中川菜々",
+      "id": "setsuna"
+    },
+    {
+      "names": "艾玛·维尔德;エマ・ヴェルデ;艾玛;エマ",
+      "id": "emma"
+    },
+    {
+      "names": "天王寺璃奈;璃奈",
+      "id": "rina"
+    },
+    {
+      "names": "三船栞子;栞子",
+      "id": "shioriko"
+    },
+    {
+      "names": "钟岚珠;鐘嵐珠;ショウ・ランジュ;岚珠;嵐珠;ランジュ",
+      "id": "lanzhu"
+    },
+    {
+      "names": "米娅·泰勒;ミア・テイラー;米娅;ミア",
+      "id": "mia"
+    },
+    {
+      "names": "乙宗梢;梢",
+      "id": "kozue"
+    },
+    {
+      "names": "夕雾缀理;夕霧綴理;缀理;綴理",
+      "id": "tsuzuri"
+    },
+    {
+      "names": "藤岛慈;藤島慈;慈",
+      "id": "megumi"
+    },
+    {
+      "names": "日野下花帆;花帆",
+      "id": "kaho"
+    },
+    {
+      "names": "村野沙耶香;村野さやか;沙耶香;さやか",
+      "id": "sayaka"
+    },
+    {
+      "names": "大泽瑠璃乃;大沢瑠璃乃;瑠璃乃",
+      "id": "rurino"
+    },
+    {
+      "names": "百生吟子;吟子",
+      "id": "ginko"
+    },
+    {
+      "names": "徒町小铃;徒町小鈴;小铃;小鈴",
+      "id": "kosuzu"
+    },
+    {
+      "names": "安养寺姬芽;安養寺姫芽;姬芽;姫芽",
+      "id": "hime"
+    },
+    {
+      "names": "桂城泉;泉",
+      "id": "izumi"
+    },
+    {
+      "names": "塞拉斯·柳田·莉莉安;セラス・柳田・リリエンフェルト;セラス・柳田・L;セラス柳田L;塞拉斯;セラス",
+      "id": "ceras"
+    },
+    {
+      "names": "夜羽;幻日夜羽 夜羽",
+      "id": "yohane"
+    },
+    {
+      "names": "幻日夜羽 千歌",
+      "id": "yohane_chika"
+    },
+    {
+      "names": "幻日夜羽 梨子",
+      "id": "yohane_riko"
+    },
+    {
+      "names": "幻日夜羽 果南",
+      "id": "yohane_kanan"
+    },
+    {
+      "names": "幻日夜羽 黛雅",
+      "id": "yohane_dia"
+    },
+    {
+      "names": "幻日夜羽 曜",
+      "id": "yohane_you"
+    },
+    {
+      "names": "幻日夜羽 花丸",
+      "id": "yohane_hanamaru"
+    },
+    {
+      "names": "幻日夜羽 鞠莉",
+      "id": "yohane_mari"
+    },
+    {
+      "names": "幻日夜羽 露比",
+      "id": "yohane_ruby"
+    },
+    {
+      "names": "暗夜恶魔 千歌",
+      "id": "yohane_chika_boss"
+    },
+    {
+      "names": "暗夜恶魔 梨子;暗夜恶魔 梨梨",
+      "id": "yohane_riko_boss"
+    },
+    {
+      "names": "暗夜恶魔 果南",
+      "id": "yohane_kanan_boss"
+    },
+    {
+      "names": "暗夜恶魔 黛雅",
+      "id": "yohane_dia_boss"
+    },
+    {
+      "names": "暗夜恶魔 曜",
+      "id": "yohane_you_boss"
+    },
+    {
+      "names": "暗夜恶魔 花丸",
+      "id": "yohane_hanamaru_boss"
+    },
+    {
+      "names": "暗夜恶魔 鞠莉",
+      "id": "yohane_mari_boss"
+    },
+    {
+      "names": "暗夜恶魔 露比",
+      "id": "yohane_ruby_boss"
+    },
+    {
+      "names": "大天师夜羽",
+      "id": "yohane_boss"
+    },
+    {
+      "names": "鹿角圣良;鹿角聖良;圣良;聖良",
+      "id": "sarah"
+    },
+    {
+      "names": "鹿角理亚;鹿角理亞;理亚;理亞",
+      "id": "leah"
+    },
+    {
+      "names": "大贺美沙知;大賀美沙知;沙知",
+      "id": "misachi"
+    },
+    {
+      "names": "锦上莓果;錦上マイカ;锦上舞香;莓果;舞香;マイカ",
+      "id": "maika"
+    },
+    {
+      "names": "村野つかさ;つかさ",
+      "id": "tsukasa"
+    },
+    {
+      "names": "大道广实;大道広実;广实;広実",
+      "id": "hiromi"
     }
   ]
 }

@@ -6,10 +6,28 @@
   if(!mapping||mapping.fatal)throw Error('角色映射表不可用，请先调整 id 对应表。');
   const table=new Map(Object.entries(mapping.nameToId||{}).map(([name,id])=>[fold(name),str(id)])),knownIds=new Map([...table.values()].map(id=>[fold(id),id]));
   if(!table.size)throw Error('角色映射表为空。');
+  // Keep shared aliases for dialogue even though the general lookup has one ID per name.
+  const dialogueIds=new Map();
+  for(const row of mapping.rows||[]){
+   for(const alias of row.names.split(';')){
+    const name=fold(alias);
+    if(!dialogueIds.has(name))dialogueIds.set(name,new Set());
+    dialogueIds.get(name).add(str(row.id));
+   }
+  }
   const inside=()=>true;
   const aliases=[...table].map(([name,id])=>({name:name.replace(/[\s\u3000]+/g,' '),id})),pathCache=new Map(),warnings=[],patches=[],stats={figures:0,dialogues:0,effects:0,exitRows:0,skipped:0};
   const warn=(row,message)=>{if(inside(row)){warnings.push('第 '+row.startLine+' 行：'+message);stats.skipped++;}};
-  function matchPath(path){const value=fold(path).replace(/\\/g,'/').replace(/[\s\u3000]+/g,' ');if(pathCache.has(value))return pathCache.get(value);let best=0,ids=new Set();for(const {name,id} of aliases){let at=-1,matched=false;while((at=value.indexOf(name,at+1))>=0){const latin=/^[a-z]/i.test(name)||/[a-z]$/i.test(name);if(!latin||(!/[a-z]/i.test(value[at-1]||'')&&!/[a-z]/i.test(value[at+name.length]||''))){matched=true;break;}}if(matched){const score=name.replace(/\s/g,'').length;if(score>best){best=score;ids=new Set([id]);}else if(score===best)ids.add(id);}}
+  const normalizedNames=new Map();
+  const compact=name=>fold(name).replace(/　|\s/g,'');
+  for(const [name,id] of table){const key=compact(name);if(!normalizedNames.has(key))normalizedNames.set(key,new Set());normalizedNames.get(key).add(id);}
+  function matchPath(path){
+   const modelNames=options.modelCharacters?.get(path);
+   if(modelNames){
+    const ids=new Set(modelNames.flatMap(name=>[...(normalizedNames.get(compact(name))||[])]));
+    return {id:ids.size===1?[...ids][0]:null,ambiguous:ids.size>1};
+   }
+   const value=fold(path).replace(/\\/g,'/').replace(/[\s\u3000]+/g,' ');if(pathCache.has(value))return pathCache.get(value);let best=0,ids=new Set();for(const {name,id} of aliases){let at=-1,matched=false;while((at=value.indexOf(name,at+1))>=0){const latin=/^[a-z]/i.test(name)||/[a-z]$/i.test(name);if(!latin||(!/[a-z]/i.test(value[at-1]||'')&&!/[a-z]/i.test(value[at+name.length]||''))){matched=true;break;}}if(matched){const score=name.replace(/\s/g,'').length;if(score>best){best=score;ids=new Set([id]);}else if(score===best)ids.add(id);}}
    if(!ids.size)for(const token of value.split(/[\/_.\-\s]+/)){const id=knownIds.get(token);if(id)ids.add(id);}const result={id:ids.size===1?[...ids][0]:null,ambiguous:ids.size>1};pathCache.set(value,result);return result;
   }
   const rawByLine=new Map((native.parse(model.source).sentenceList||[]).filter(s=>!s.isLineBreakHolder).map(s=>[s.startLine,s]));let speaker='';
@@ -30,6 +48,7 @@
     const actor=item.actor||previous?.actor||null;let output=existing||'fig-'+pos,custom=!!existing;
     if(inside(row)&&(!item.hasExisting||options.overwrite)){
      if(item.ambiguous){warn(row,'路径匹配到多个角色，未重新推断角色。');if(previous&&existing){output=previous.id;custom=previous.custom;write(row,[{id:output}]);}}
+     else if(actor&&stage.has(actor)&&stage.get(actor).pos!==pos&&!existing){warn(row,'同一角色已使用默认 ID 登场，请为这套立绘指定单独 ID。');}
      else if(actor){output=actor;custom=true;const replacements=[];if(previous&&existing&&previous.id!==output){replacements.push({__content:'none',id:previous.id,next:true});stats.exitRows++;}replacements.push({id:output});write(row,replacements);stats.figures++;}
      else warn(row,'立绘路径没有匹配到角色，保持原样。');
     }
@@ -40,8 +59,17 @@
    if(row.command==='say'){
     if(!inside(row)||!item.speaker)continue;const hasId=own(a,'figureId')&&a.figureId!==false&&a.figureId!=='';
     if(hasId&&!options.overwrite)continue;if(!item.sayActor){warn(row,'说话人名字没有匹配到角色，保持原样。');continue;}
-    const matches=[...stage.values()].filter(v=>fold(v.actor)===fold(item.sayActor)),hasPosition=positions.some(p=>a[p]===true),preferred=hasPosition?matches.filter(v=>v.pos===pos):matches,candidates=(preferred.length?preferred:matches).sort((a,b)=>b.order-a.order);let id=item.sayActor;
-    if(!options.ignorePresence){if(!candidates.length){warn(row,'角色不在场，对话保持原样。');continue;}const present=candidates[0];if(!present.custom){warn(row,'在场立绘路径未能匹配角色 ID，对话保持原样。');continue;}id=present.id;}
+    const directIds=dialogueIds.get(fold(item.speaker));
+    if(options.ignorePresence&&directIds?.size>1){
+     warn(row,'说话人名字对应多个角色，请指定对话关联的立绘。');continue;
+    }
+    const speakerIds=new Set(directIds||[item.sayActor]);
+    for(const prefix of ['幻日夜羽 ','暗夜恶魔 ']){
+     const variantId=table.get(fold(prefix+item.speaker));
+     if(variantId)speakerIds.add(variantId);
+    }
+    const matches=[...stage.values()].filter(v=>speakerIds.has(v.actor)),hasPosition=positions.some(p=>a[p]===true),preferred=hasPosition?matches.filter(v=>v.pos===pos):matches,candidates=(preferred.length?preferred:matches).sort((a,b)=>b.order-a.order);let id=item.sayActor;
+    if(!options.ignorePresence){if(!candidates.length){warn(row,'角色不在场，对话保持原样。');continue;}if(candidates.length>1){warn(row,'有多套在场立绘匹配该角色，请指定对话关联的立绘。');continue;}const present=candidates[0];if(!present.custom){warn(row,'在场立绘路径未能匹配角色 ID，对话保持原样。');continue;}id=present.id;}
     const args={figureId:id,id:true};for(const p of positions)args[p]=false;write(row,[args]);stats.dialogues++;continue;
    }
    if(!inside(row)||!str(a.target))continue;

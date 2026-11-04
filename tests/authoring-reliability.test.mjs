@@ -18,13 +18,48 @@ function terre(version){
   if(options?.method==='POST'){const body=JSON.parse(options.body);if(url.endsWith('/createNewFolder'))fs.mkdirSync(physical(body.source+'/'+body.name),{recursive:true});else if(url.endsWith('/createNewFile'))put(body.source+'/'+body.name,'');else if(url.endsWith('/editTextFile'))put(body.path,body.textFile);else throw Error('Unexpected endpoint');return {ok:true,status:200,text:async()=>'{}'};}
   const file=decodeURIComponent(String(url).replace(/^\//,'').split('?')[0]),value=get(file);return {ok:value!==null,status:value===null?404:200,text:async()=>value};
  }};ctx.window=ctx;vm.createContext(ctx);vm.runInContext('const bo=(o,k,v)=>(o[k]=v);'+bundle.slice(a,b)+';globalThis.nativeParse=parseScene;globalThis.types=commandType;',ctx);vm.runInContext(bundle.slice(c,d),ctx);
- for(const n of ['navigation-metadata','timeline-core','navigation-model','project-core','project-bridge','auto-exit','filter-helpers','expression-preparation','id-conversion','anogo-import-core','filter-edit'])vm.runInContext(fs.readFileSync(path.join(root,'browser/'+n+'.js'),'utf8'),ctx,{filename:n+'.js'});
+ for(const n of ['navigation-metadata','timeline-core','navigation-model','project-core','project-bridge','auto-exit','filter-helpers','expression-preparation','id-conversion','id-model-character','anogo-import-core','filter-edit'])vm.runInContext(fs.readFileSync(path.join(root,'browser/'+n+'.js'),'utf8'),ctx,{filename:n+'.js'});
  vm.runInContext('globalThis.A=WebVideoAutoExit;globalThis.E=webVideoExpressionPreparation;globalThis.EP=webVideoExpressionPlan;globalThis.Anogo=WebVideoAnogo;globalThis.FE=WebVideoFilterEdit;globalThis.F=WebVideoFilters;',ctx);
  const model=source=>ctx.WebVideoProject.model('games/fixture/game/scene/start.txt',source),parse=source=>ctx.nativeParse(source).sentenceList.filter(s=>!s.isLineBreakHolder&&s.commandRaw!=='comment');
  return {ctx,disk,put,get,model,parse,close:()=>fs.rmSync(disk,{recursive:true,force:true})};
 }
 const versions=['4.6.4','4.6.5','4.6.6'].filter(v=>fs.existsSync(path.join(root,'baseline/terre-'+v+'.js')));
 for(const version of versions){
+ test(version+' shared speaker aliases resolve to the onstage figure without guessing',()=>{
+  const t=terre(version);try{
+   const rows=JSON.parse(fs.readFileSync(path.join(root,'character-map.factory.json'),'utf8')).rows;
+   const mapping={rows,nameToId:Object.fromEntries(rows.flatMap(({names,id})=>names.split(';').map(name=>[name.trim().toLowerCase(),id])))};
+   const bang='changeFigure:Eri/model.json -id=guest -left;',love='changeFigure:ch0002/config.json -id=hero -right;';
+   const plan=(lines,ignorePresence=false)=>t.ctx.WebVideoIdConversion.plan(t.model(lines.join('\n')),{
+    ignorePresence,modelCharacters:new Map([['ch0002/config.json',['絢瀬絵里']]])
+   },mapping,{parse:t.ctx.nativeParse,write:t.ctx.WebVideoProject.writer});
+   const target=result=>t.parse(result.after).at(-1).args.find(arg=>arg.key==='figureId')?.value;
+   assert.equal(target(plan([bang,'绘里:你好。;'])),'guest');
+   assert.equal(target(plan([love,'绘里:你好。;'])),'hero');
+   assert.equal(target(plan([bang,love,'绘里:你好。 -left;'])),'guest');
+   for(const result of [plan([bang,love,'绘里:你好。;']),plan([bang,'绘里:你好。;'],true)]){
+    assert.equal(target(result),undefined);
+    assert.match(result.warnings.join('\n'),/多个角色|多套在场立绘/);
+   }
+  }finally{t.close();}
+ });
+
+ test(version+' Yohane allies and bosses can be bound separately in the same scene',()=>{
+  const t=terre(version);try{
+   const rows=JSON.parse(fs.readFileSync(path.join(root,'character-map.factory.json'),'utf8')).rows;
+   const mapping={rows,nameToId:Object.fromEntries(rows.flatMap(({names,id})=>names.split(';').map(name=>[name.trim().toLowerCase(),id])))};
+   const resolve=name=>t.ctx.webVideoModelCharacter({components:[{name,group:'yohane',type:'model',role:'integrated'}]});
+   assert.equal(resolve('EN_yohane_greatmaster01')[0],'暗夜恶魔 夜羽');
+   assert.equal(resolve('CH_yohane_greatmaster01')[0],'幻日夜羽 夜羽');
+   const modelCharacters=new Map([['ally/config.json',resolve('CH_chika_dinosaur01')],['boss/config.json',resolve('CH_chika_dinosaur01_inv')]]);
+   const source=['changeFigure:ally/config.json -left;','changeFigure:boss/config.json -right;','千歌:左。 -left;','千歌:右。 -right;','暗夜恶魔 千歌:明确指名。;','千歌:未指定位置。;'].join('\n');
+   const result=t.ctx.WebVideoIdConversion.plan(t.model(source),{modelCharacters},mapping,{parse:t.ctx.nativeParse,write:t.ctx.WebVideoProject.writer});
+   const id=(row,key)=>row.args.find(arg=>arg.key===key)?.value;
+   const parsed=t.parse(result.after);
+   assert.deepEqual(Array.from(parsed.slice(0,2),row=>id(row,'id')),['yohane_chika','yohane_chika_boss']);
+   assert.deepEqual(Array.from(parsed.slice(2),row=>id(row,'figureId')),['yohane_chika','yohane_chika_boss','yohane_chika_boss',undefined]);
+  }finally{t.close();}
+ });
  test(version+' production writer preserves long rich text, suffixes, quotes and physical spans',()=>{const t=terre(version);try{
   const body='中文（括号）<span style="color:rgb(1, 2, 3)">末字</span>\u200b'.repeat(4),sources=[`Alice:${body} -vocal=line.wav -when=ok; inline`, 'changeFigure:a.png\n  -id=hero\n  -bounds=-500,-500,500,500"\n  -focus={"x":-1,"y":0}\n  -next; comment'];
   for(const source of sources){const row=t.model(source).statements[0],before=t.parse(source)[0],out=t.ctx.WebVideoProject.writer(row,{args:{id:row.command==='say'?true:'hero',next:true}}),after=t.parse(out)[0];assert.equal(after.content,before.content);assert.deepEqual(plain(after.args.filter(a=>!['id','next'].includes(a.key))),plain(before.args.filter(a=>!['id','next'].includes(a.key))));assert.equal(t.parse(out+'\n:AFTER;').at(-1).content,'AFTER');assert.ok(out.endsWith(source.endsWith('inline')?'inline':'comment'));}

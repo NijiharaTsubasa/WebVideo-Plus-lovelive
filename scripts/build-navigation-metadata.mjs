@@ -10,7 +10,7 @@ const nativeEffects=Object.fromEntries([['snow','u/Wc2v'],['heavySnow','DYpFps']
 const speakerPositions=Object.fromEntries(Object.entries({center:"hfB0wu",left:"+b1cs9",right:"mL9DmJ",left13:"CoS0hc",right13:"X9IlUv",left14:"HW2q4S",right14:"msP/39"}).map(([key,id])=>[key,translations.get(id)||key]));
 // Derive display names from the versioned factory character aliases.
 const characterNames=Object.fromEntries(JSON.parse(readFactory()).rows.map(row=>[row.id.toLowerCase(),shortCharacterName(row.names)]));
-function shortCharacterName(names){const aliases=names.split(';').map(name=>name.trim()),full=aliases[0];return aliases.filter(name=>name.length<full.length&&full.toLowerCase().endsWith(name.toLowerCase())).sort((a,b)=>b.length-a.length)[0]||full.split(/[ \u3000]+/).at(-1);}
+function shortCharacterName(names){const aliases=names.split(';').map(name=>name.trim()),full=aliases[0];if(full.startsWith('暗夜恶魔 '))return full;return aliases.filter(name=>name.length<full.length&&full.toLowerCase().endsWith(name.toLowerCase())).sort((a,b)=>b.length-a.length)[0]||full.split(/[ \u3000]+/).at(-1);}
 function readFactory(){return fs.readFileSync(path.join(root,'character-map.factory.json'),'utf8').replace(/^\uFEFF/,'');}
 const filterPresets=JSON.parse(fs.readFileSync(path.join(root,"filter-presets.factory.json"),"utf8").replace(/^\uFEFF/,"")).filters;
 const effectPresets=JSON.parse(fs.readFileSync(path.join(root,"preset-effects.factory.json"),"utf8")).effects;
