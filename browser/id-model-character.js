@@ -74,9 +74,11 @@ async function webVideoReadModelCharacters(game,model){
  async function read(reference){
   const path=reference?.split(/(?<=config\.json)\+/)[0];
   if(!path?.endsWith('/config.json')&&path!=='config.json')return;
+  const shared=/^http:\/\/127\.0\.0\.1:\d+\/webvideo-shared\/[a-f0-9]{32}\//.test(path);
   const parts=path.split('/');
-  if(parts.some(part=>!part||part==='.'||part==='..'||/[:\\]/.test(part)))return;
-  const response=await fetch('/games/'+encodeURIComponent(game)+'/game/3d/figure/'+parts.map(encodeURIComponent).join('/'),{signal:AbortSignal.timeout(5000)}).catch(()=>null);
+  if(!shared&&parts.some(part=>!part||part==='.'||part==='..'||/[:\\]/.test(part)))return;
+  const url=shared?path:'/games/'+encodeURIComponent(game)+'/game/3d/figure/'+parts.map(encodeURIComponent).join('/');
+  const response=await fetch(url,{signal:AbortSignal.timeout(5000)}).catch(()=>null);
   if(!response?.ok)return;
   const character=webVideoModelCharacter(await response.json().catch(()=>null));
   if(character)names.set(reference,character);

@@ -22,11 +22,11 @@ namespace NativeVideo {
     return HttpResponse.Data(await Task.Run(()=>SharedStore.GltfNamedResources()));
    }
    if(r.Path=="/api/shared/resolve"){sharedResources.Start();if(sharedResources.Error!=null)throw new IOException(sharedResources.Error);return HttpResponse.Data(J.O("url",SharedStore.ResourceUrl(J.S(data,"kind"),J.S(data,"reference"))));}
-   if(r.Path=="/api/shared/copy"){string project=SharedProject(J.S(data,"project"));return HttpResponse.Data(await Task.Run(()=>SharedStore.Copy(J.S(data,"requestId"),project,J.S(data,"kind"),J.S(data,"reference"),J.S(data,"name"),workRoot,EngineAdapter.Select(J.O("project",project,"engineRoot",Path.Combine(terreDir,"assets/templates/WebGAL_Template"),"settings",J.O("engine","webgal"))))));}
+   if(r.Path=="/api/shared/copy"){string project=SharedProject(J.S(data,"project"));return HttpResponse.Data(await Task.Run(()=>SharedStore.Copy(J.S(data,"requestId"),project,J.S(data,"kind"),J.S(data,"reference"),J.S(data,"name"),workRoot,EngineAdapter.Select(J.O("project",project,"externalEngine",externalEngines.ForProject(project),"engineRoot",Path.Combine(terreDir,"assets/templates/WebGAL_Template"),"settings",J.O("engine","webgal")),false))));}
    if(r.Path=="/api/shared/materialize"){
     string name=J.S(data,"project"),project=SharedProject(name),exportRoot=Files.Under(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(project)),"Exported_Games"),name),target=Files.Full(J.S(data,"outputGameDir"));
     if(!Files.Within(exportRoot,target)||Path.GetFileName(target)!="game")throw new IOException("游戏导出目录无效");SharedAssets.NoLinks(Path.GetPathRoot(target),target);
-    var adapter=EngineAdapter.Select(J.O("project",project,"engineRoot",Path.Combine(terreDir,"assets/templates/WebGAL_Template"),"settings",J.O("engine","webgal")));
+    var adapter=EngineAdapter.Select(J.O("project",project,"externalEngine",externalEngines.ForProject(project),"engineRoot",Path.Combine(terreDir,"assets/templates/WebGAL_Template"),"settings",J.O("engine","webgal")),false);
     var assets=new ProjectAssets(project,Path.GetDirectoryName(target),adapter.Source,"",null,adapter){Shared=SharedStore};foreach(var scene in J.A(J.Get(data,"scenes")))assets.CollectSharedScene(J.Get(scene,"parsed"));assets.CollectSharedConfig(J.S(data,"configText"));return HttpResponse.Data(J.O("manifest",assets.CopyShared()));
    }
    return HttpResponse.Data(J.O("error","接口不存在"),404);

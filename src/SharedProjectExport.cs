@@ -20,7 +20,7 @@ namespace NativeVideo {
      await Task.Run(()=>{
       Files.CopyTree(project,clone);if(external!=null){ExternalEngines.CopyShell(J.S(external,"root"),clone);File.Delete(Path.Combine(clone,".webvideo-engine.json"));}
       if(!File.Exists(Path.Combine(clone,"index.html"))){string template=Path.Combine(terreDir,"assets/templates/WebGAL_Template");foreach(string directory in Directory.GetDirectories(template)){string name=Path.GetFileName(directory),target=Path.Combine(clone,name);if(name!="game"&&!Directory.Exists(target))Files.CopyTree(directory,target);}foreach(string file in Directory.GetFiles(template)){string target=Path.Combine(clone,Path.GetFileName(file));if(!File.Exists(target))Files.CopyFile(file,target);}}
-      var adapter=EngineAdapter.Select(J.O("project",project,"engineRoot",Path.Combine(terreDir,"assets/templates/WebGAL_Template"),"settings",J.O("engine","webgal")));
+      var adapter=EngineAdapter.Select(J.O("project",project,"externalEngine",external,"engineRoot",Path.Combine(terreDir,"assets/templates/WebGAL_Template"),"settings",J.O("engine","webgal")),false);
       var assets=new ProjectAssets(project,clone,adapter.Source,"",null,adapter){Shared=SharedStore.ForHttpSource(string.Join("\n",sources.Values))};
       foreach(var pair in sources){assets.CollectSharedSource(pair.Value);string relative=pair.Key.Substring(project.Length+1),target=Files.Under(clone,relative);Files.Atomic(target,SharedStore.LocalizeSource(pair.Value));}
       manifest=assets.CopyShared();

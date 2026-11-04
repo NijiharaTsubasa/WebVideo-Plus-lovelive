@@ -13,7 +13,11 @@ const WebVideoAnogo=(()=>{
    const source=await WebVideoProject.read(WebVideoProject.projectPath(C.safePath(file)),null);
    return source?JSON.parse(source):null;
   };
-  const configs=await Promise.all(paths.map(path=>read('game/3d/figure/'+path)));
+  const configs=await Promise.all(paths.map(async path=>{
+   if(!/^http:\/\/127\.0\.0\.1:\d+\/webvideo-shared\/[a-f0-9]{32}\//.test(path))return read('game/3d/figure/'+path);
+   const response=await fetch(path,{signal:AbortSignal.timeout(5000)});
+   return response.ok?response.json():null;
+  }));
   if(!configs.some(Boolean))return null;
   const components=configs.flatMap((config,index)=>(config?.components||[])
    .filter(component=>component?.type==='model'&&(paths.length===1||component.role===(index===0?'head':'body'))));
@@ -22,7 +26,7 @@ const WebVideoAnogo=(()=>{
   const body=integrated||components.find(component=>component.role==='body');
   if(!face||!body)return {motions:[],expressions:[]};
   const resources=await readResources();
-  const motions=resources.filter(entry=>entry.type==='garupa-motion'||entry.type==='motion').map(entry=>entry.name);
+  const motions=resources.filter(entry=>entry.type==='garupa-motion'||entry.type==='motion').map(entry=>entry.url?entry:entry.name);
   const expressions=[];
   const groups=Array.isArray(face.expressionGroups)?face.expressionGroups:[];
   const states=type=>groups.find(group=>group.type===type)?.states||[];
@@ -39,7 +43,7 @@ const WebVideoAnogo=(()=>{
    try{return await read('game/'+config);}catch{return null;}
   }));
   if(body.motionGroup&&adapterConfigs.some(config=>config?.components?.some(component=>component.type==='garupa-expression-adapter'&&component.motionGroup===body.motionGroup))){
-   expressions.push(...resources.filter(entry=>entry.type==='garupa-expression').map(entry=>entry.name));
+   expressions.push(...resources.filter(entry=>entry.type==='garupa-expression').map(entry=>entry.url?entry:entry.name));
   }
   return {motions,expressions,native};
  }
@@ -52,10 +56,21 @@ const WebVideoAnogo=(()=>{
    const response=await fetch('/api/manageGame/updateGltfResourceCatalog',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gameName})});
    if(!response.ok)return [];
    const data=await response.json();
-   return Array.isArray(data.resources)?data.resources:[];
+   const local=Array.isArray(data.resources)?data.resources:[];
+   const shared=typeof WebVideoSharedMaterials==='undefined'?[]:await WebVideoSharedMaterials
+    .request('/api/shared/gltf-named',{}).catch(()=>[]);
+   return local.concat(shared.map(entry=>({...entry,type:entry.type==='expression'?'garupa-expression':'motion'})));
   })().catch(()=>[]);
   async function catalog(template){if(catalogs.has(template.content))return catalogs.get(template.content);let gltf;try{gltf=await readGltfOptions(template.content,readResources);}catch{gltf={motions:[],expressions:[]};}if(gltf){catalogs.set(template.content,gltf);return gltf;}if(!/\.jsonl?$/i.test(template.content)){const empty={motions:[],expressions:[]};catalogs.set(template.content,empty);return empty;}let motions=[],expressions=[];try{const file=WebVideoProject.projectPath('game/figure/'+C.safePath(template.content)),text=await WebVideoProject.read(file,null);if(text&&text.length<=4*1024*1024){let doc;try{doc=JSON.parse(text);}catch{for(const line of text.split(/\r?\n/)){try{const value=JSON.parse(line);if(value.motions||value.expressions||value.FileReferences){doc=value;break;}}catch{}}}if(doc){motions=Object.keys(doc.motions||doc.FileReferences?.Motions||{});expressions=(doc.expressions||doc.FileReferences?.Expressions||[]).map(item=>item.name||item.Name).filter(Boolean);}}}catch{}const result={motions,expressions};catalogs.set(template.content,result);return result;}
-  const pick=(items,key)=>{if(!key)return null;return items.find(item=>fold(item)===fold(key))||[...items].sort().find(item=>fold(item).includes(fold(key)))||null;};
+  const pick=(items,key)=>{
+   if(!key)return null;
+   const name=item=>fold(item.name??item),value=item=>item.url??item;
+   const exact=items.find(item=>name(item)===fold(key)||fold(value(item))===fold(key));
+   if(exact)return value(exact);
+   const matches=items.filter(item=>name(item).includes(fold(key)));
+   const local=matches.filter(item=>typeof item==='string').sort();
+   return local[0]??(matches.length===1?value(matches[0]):null);
+  };
   for(let index=0;index<data.length;index++){const item=data[index];if(item.type==='background'){const asset=C.safePath(item.背景);add('changeBg:'+C.escapeText(asset)+' -next;',!useActions);continue;}if(item.type==='narration'){add(':'+importText(item.旁白)+';',!useActions);continue;}
    const name=item.角色.trim();if(!name||name.includes(' -')||/[;:\\|\x00\r\n]/.test(name))throw Error('第 '+(index+1)+' 条角色名无效。');const id=lookup(characters.nameToId,fold(name)),action=item.动作.trim();let pending=!useActions||!action||!id,comment=action?' Anogo动作：'+plain(action):'',change=null;
    if(!id)warnings.push('第 '+(index+1)+' 条：角色“'+name+'”未匹配到 ID，已保留对话。');

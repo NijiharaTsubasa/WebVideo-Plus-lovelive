@@ -28,7 +28,7 @@ namespace NativeVideo {
    }
    return gltfRuntime=entries;
   }
-  void CollectSharedGltf(string reference,string config){
+  void CollectSharedGltf(string reference,string config,string role=null){
    try{
     var dependencies=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     Action<string,string> collect=(parent,uri)=>{
@@ -39,7 +39,7 @@ namespace NativeVideo {
      dependencies.Add(file);
     };
     var required=new HashSet<string>(StringComparer.Ordinal);
-    foreach(var component in J.A(J.Get(J.Read(config),"components")).Where(c=>J.S(c,"type")=="model")){
+    foreach(var component in J.A(J.Get(J.Read(config),"components")).Where(c=>J.S(c,"type")=="model"&&(role==null||J.S(c,"role")==role))){
      if(J.S(component,"role")!="head"){
       var defaultMotion=J.S(component,"defaultMotion");
       var relative=defaultMotion.StartsWith("./",StringComparison.Ordinal)||defaultMotion.StartsWith("../",StringComparison.Ordinal);
@@ -228,11 +228,12 @@ namespace NativeVideo {
     if(parts.All(part=>part.EndsWith("/config.json",StringComparison.OrdinalIgnoreCase))){
      try{
       bool found=true;
-      foreach(var part in parts.Select(PhysicalName)){
+      for(int index=0;index<parts.Length;index++){
+       var part=PhysicalName(parts[index]);
        if(File.Exists(Files.Under(figureRoot,part)))continue;
        if(Shared!=null&&part.StartsWith(SharedAssets.Prefix,StringComparison.Ordinal)){
         var config=Shared.Resolve(kind,part);
-        if(IsGltfPackage(config))CollectSharedGltf(part,config);else found=false;
+        if(IsGltfPackage(config))CollectSharedGltf(part,config,parts.Length==2?(index==0?"head":"body"):null);else found=false;
        }else if(!File.Exists(Files.Under(figureRoot,part)))found=false;
       }
       if(found)return;
@@ -270,7 +271,19 @@ namespace NativeVideo {
    if(Adapter.IsLoveLive&&value.EndsWith("/config.json",StringComparison.OrdinalIgnoreCase)
      &&File.Exists(Files.Under(Path.Combine(Project,"game/3d/figure"),PhysicalName(value))))return;
    string id=value.Substring(SharedAssets.Prefix.Length).Split('/')[0],registered=Shared==null?null:Shared.KindForId(id);if(registered!=null){if(registered!="all")CollectShared(registered,value);else{string file=Shared.Resolve("figure",value),extension=Path.GetExtension(file).ToLowerInvariant();string[] kinds=Regex.IsMatch(extension,@"^\.(jsonl|wmdl|json|moc3?|mtn)$")?new[]{"figure"}:Regex.IsMatch(extension,@"^\.(png|jpe?g|webp|gif|bmp|avif|svg)$")?new[]{"figure","background"}:Regex.IsMatch(extension,@"^\.(mp3|wav|ogg|opus|m4a|aac|flac)$")?new[]{"bgm","vocal"}:Regex.IsMatch(extension,@"^\.(mp4|webm|mov|mkv)$")?new[]{"background","video"}:SharedAssets.Kinds;foreach(string kind in kinds)CollectShared(kind,value);}return;}bool found=false;foreach(string kind in SharedAssets.Kinds){string name=PhysicalName(Clean(kind,value));if(!AmbiguousWindowsPath(name)&&LocalFile(kind,name)!=null){CollectShared(kind,value);found=true;}}if(!found)Add("missing",0,value,"共享素材来源未登记，请重新选择文件夹");}
-  public void CollectSharedSource(string source){if(Shared==null)return;foreach(string reference in Shared.SourceReferences(source).Distinct(StringComparer.Ordinal))CollectSharedLiteral(reference);}
+  public void CollectSharedSource(string source){
+   if(Shared==null)return;
+   if(Adapter.IsLoveLive){
+    source=Shared.LocalizeSource(source);
+    source=Regex.Replace(source,@"(?im)^(\s*changeFigure\s*:\s*)(?<pair>[^;\r\n]+?config\.json\+[^;\r\n]+?config\.json)(?=\s|;|$)",match=>{
+     string pair=match.Groups["pair"].Value;
+     if(!Regex.Split(pair,@"(?<=config\.json)\+",RegexOptions.IgnoreCase).Any(part=>part.StartsWith(SharedAssets.Prefix,StringComparison.Ordinal)))return match.Value;
+     Ref("figure",pair,0,null);
+     return match.Groups[1].Value;
+    });
+   }
+   foreach(string reference in Shared.SourceReferences(source).Distinct(StringComparer.Ordinal))CollectSharedLiteral(reference);
+  }
   void CollectSharedNamedArgs(object parameters){
    if(!Adapter.IsLoveLive||Shared==null)return;
    foreach(var key in new[]{"motion","expression"}){

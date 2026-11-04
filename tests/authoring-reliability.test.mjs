@@ -94,6 +94,28 @@ for(const version of versions){
    assert.equal(plan.reviewCount,0);
   }finally{t.close();}
  });
+ test(version+' shared 3D figures provide character metadata and Anogo assets',async()=>{
+  const t=terre(version);try{
+   const base='http://127.0.0.1:1234/webvideo-shared/'+'a'.repeat(32)+'/'+'b'.repeat(32)+'/';
+   const figure=base+'3d_costume_1001103101/config.json',motion=base+'motion/stand.motionbin';
+   const config={name:'花帆',components:[{type:'model',role:'integrated',name:'3d_costume_1001103101',expressionGroups:[{type:'face',states:[{name:'笑'}]}]}]};
+   const fetch=t.ctx.fetch;
+   t.ctx.AbortSignal=AbortSignal;
+   t.ctx.fetch=(url,options)=>url===figure?Promise.resolve({ok:true,json:async()=>config})
+    :url==='/api/manageGame/updateGltfResourceCatalog'?Promise.resolve({ok:true,json:async()=>({resources:[]})}):fetch(url,options);
+   t.ctx.WebVideoSharedMaterials={request:async()=>[{name:'共享库/motion/stand.motionbin',type:'motion',url:motion}]};
+   await t.ctx.WebVideoProject.activate('fixture');
+   const model=t.model('changeFigure:'+figure+' -id=hero;');
+   t.ctx.testModel=model;
+   assert.ok((await vm.runInContext("webVideoReadModelCharacters('fixture',testModel)",t.ctx)).has(figure));
+   const plan=await t.ctx.Anogo.compile(JSON.stringify([{角色:'角色',动作:'打招呼',对话:'你好'}]),model,
+    {nameToId:{角色:'hero'}},{lookup:{打招呼:{motion:'stand.motionbin',expression:'笑'}}},true);
+   const emitted=t.parse(plan.after)[1];
+   assert.equal(emitted.args.find(arg=>arg.key==='motion')?.value,motion);
+   assert.equal(emitted.args.find(arg=>arg.key==='expression')?.value,'3d:face/'+encodeURIComponent('笑'));
+   assert.equal(plan.reviewCount,0);
+  }finally{t.close();}
+ });
  test(version+' concurrent music and authoring saves preserve both disk contracts after reload',async()=>{const t=terre(version);try{
   const P=t.ctx.WebVideoProject;await P.activate('fixture');const music={schemaVersion:2,enabled:true,players:1,tracks:[{id:'track',name:'A',file:'game/bgm/a.ogg',lane:0,startSeconds:1,offsetSeconds:2,durationSeconds:3,volume:55,enabled:false,loop:true,fullLength:false,fadeInSeconds:.2,fadeOutSeconds:.4}]};
   await Promise.all([P.saveMusic(music),P.update(p=>{p.markers.push({id:'coexisting',path:'games/fixture/game/scene/start.txt'});})]);assert.equal(P.state().project.markers[0].id,'coexisting');assert.equal(P.state().project.backups.filter(x=>x.kind==='music').length,1);assert.equal(JSON.parse(t.get('games/fixture/.webvideo-plus/authoring.json')).markers[0].id,'coexisting');assert.deepEqual(JSON.parse(t.get('games/fixture/video-project.json')).tracks,music.tracks);

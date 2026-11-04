@@ -24,6 +24,35 @@ class ProjectResourceChecks {
    Fail(()=>Create(service,Dto("空白 中文",true)),"duplicate project does not overwrite");Check(File.ReadAllText(Path.Combine(project,"game/scene/start.txt"))==":;\n","duplicate leaves original project intact");Fail(()=>Create(service,Dto("../escape",true)),"invalid project directory rejected");
    result=Create(service,Dto("挂载引擎",false,true,engine));project=Path.Combine(games,"挂载引擎");Check(J.B(result,"externalEngine")||J.Get(result,"externalEngine")!=null,"mounted project creation returns source");Check(File.Exists(Path.Combine(project,".webvideo-engine.json")),"mounted project retains explicit registration");Check(!Directory.Exists(Path.Combine(project,"assets")),"mounted engine assets remain external");Check(File.ReadAllText(Path.Combine(project,"index.html")).Contains("/webvideo-engine/"),"mounted project entry uses stable resource identity");Check(engines.ForProject(project)!=null,"mounted project source resolves after registry reread");Check(File.Exists(Path.Combine(project,"game/figure/样例.png")),"copy samples remains independent of engine mounting");
    var both=Create(service,Dto("空白挂载",true,true,engine));Check(!Directory.EnumerateFiles(Path.Combine(games,"空白挂载/game/figure")).Any(),"blank and engine mount options combine");Check(!Directory.GetDirectories(games).Any(p=>Path.GetFileName(p).StartsWith(".webvideo-create-")),"creation staging directories cleaned");
+   string loveLive=Path.Combine(root,"lovelive-engine");
+   Files.CopyTree(engine,loveLive);
+   Put(loveLive,"webgal-engine.json","{\"id\":\"webgal-lovelive.lovelive\",\"version\":\"0.2.0\"}");
+   Put(loveLive,"assets/engine.js","export const __webgalOfflineExportHost = {};");
+   Put(loveLive,"game/3d/runtime/index.json","{\"packages\":[]}");
+   Put(loveLive,"game/3d/motion/demo.motionbin","sample");
+   Create(service,Dto("LoveLive mount",true,true,loveLive));
+   var loveProject=Path.Combine(games,"LoveLive mount");
+   var mounted=engines.ForProject(loveProject);
+   Check(J.S(mounted,"engineId")=="webgal-lovelive.lovelive"&&File.Exists(Path.Combine(loveProject,"game/3d/runtime/index.json")),"mounted LoveLive preserves its project runtime");
+   Check(!Directory.Exists(Path.Combine(loveProject,"assets"))&&!Directory.Exists(Path.Combine(loveProject,"game/3d/motion")),"mounted blank project keeps engine assets external and omits sample motion");
+   var loveAdapter=EngineAdapter.Select(J.O("project",loveProject,"externalEngine",mounted));
+   Check(loveAdapter.IsLoveLive,"mounted LoveLive uses its registered engine adapter");
+   Put(loveLive,"assets/engine.js","export const game=true;");
+   Check(EngineAdapter.Select(J.O("project",loveProject,"externalEngine",mounted),false).IsLoveLive,"ordinary mounted game packaging accepts an engine without the video host");
+   Fail(()=>EngineAdapter.Select(J.O("project",loveProject,"externalEngine",mounted)),"video export still requires the LoveLive video host");
+   string roleLibrary=Path.Combine(root,"role-library");
+   Put(roleLibrary,"pair/config.json","{\"components\":[{\"type\":\"model\",\"role\":\"head\",\"model\":\"head.glb\"},{\"type\":\"model\",\"role\":\"body\",\"model\":\"missing.glb\"}]}");
+   using(var writer=new BinaryWriter(File.Create(Path.Combine(roleLibrary,"pair/head.glb")))){
+    writer.Write(0x46546c67);writer.Write(2);writer.Write(24);writer.Write(4);writer.Write(0x4e4f534a);writer.Write(new byte[]{123,125,32,32});
+   }
+   var roleId=J.S(store.Add(roleLibrary,"all","Roles"),"id");
+   var roleReference="__shared/"+roleId+"/pair/config.json";
+   Put(loveProject,"game/3d/figure/body/config.json","{}");
+   var roleStage=Path.Combine(root,"role-stage");
+   var roleAssets=new ProjectAssets(loveProject,roleStage,loveLive,"",null,loveAdapter){Shared=store};
+   roleAssets.CollectSharedSource("changeFigure:"+store.ResourceUrl("figure",roleReference)+"+body/config.json -next;");
+   roleAssets.CopyShared();
+   Check(File.Exists(Path.Combine(roleStage,"game/3d/figure/__shared",roleId,"pair/head.glb")),"composed shared figure collects only the selected head");
    var keepDto=J.D(Dto("保留引擎界面",false));keepDto["ignoreTemplate"]=true;Create(service,keepDto);Check(File.ReadAllText(Path.Combine(games,"保留引擎界面/game/template/template.json")).Contains("引擎界面"),"ignoreTemplate keeps the engine UI configuration");
    string custom=Path.Combine(terre,"data/templates/自定义 界面");Put(custom,"template.json","{\"name\":\"自定义界面\"}");Put(custom,"custom.css","body{}");var customDto=J.D(Dto("选择自定义界面",true));customDto["templateDir"]="自定义 界面";Create(service,customDto);Check(File.Exists(Path.Combine(games,"选择自定义界面/game/template/custom.css")),"selected custom template configuration copied");
    Fail(()=>Create(service,Dto("无效引擎层级",true,true,Path.Combine(engine,"assets"))),"create rejects incorrect engine directory");Check(!Directory.Exists(Path.Combine(games,"无效引擎层级")),"rejected create leaves no published project");

@@ -26,7 +26,7 @@ namespace NativeVideo {
    if(!File.Exists(html)||new FileInfo(html).Length>1024*1024)return null;
    var match=Regex.Match(File.ReadAllText(html),"<script\\b(?=[^>]*\\btype=['\"]module['\"])[^>]*\\bsrc=['\"]([^'\"]+)['\"]",RegexOptions.IgnoreCase);
    if(!match.Success)return null;
-   string relative=match.Groups[1].Value;
+   string relative=Regex.Split(match.Groups[1].Value,@"[?#]")[0];
    if(Regex.IsMatch(relative,@"^(?:[a-z]+:|//)",RegexOptions.IgnoreCase))return null;
    try { return Files.Under(root,relative.TrimStart('.','/')); } catch { return null; }
   }
@@ -155,13 +155,15 @@ namespace NativeVideo {
    if(FindMygo(gamesRoot,terreDir)!=null)options.Add(J.O("value","mygo","label","MyGO 3.2.1"));
    return options.ToArray();
   }
-  public static EngineAdapter Select(object request) {
+  public static EngineAdapter Select(object request,bool requireOfflineHost=true) {
    string projectRuntime=J.S(J.Get(request,"externalEngine"),"root",J.S(request,"project"));
    var selected=J.S(J.Get(request,"settings"),"engine","webgal");
    var manifest=J.TryRead(Path.Combine(projectRuntime,"webgal-engine.json"));
    if(IsLoveLiveProject(projectRuntime)) {
     string loveLiveMain=MainBundle(projectRuntime);
-    if(loveLiveMain==null||!File.ReadAllText(loveLiveMain).Contains("__webgalOfflineExportHost"))
+    if(loveLiveMain==null||!File.Exists(loveLiveMain))
+     throw new IOException("当前 LoveLive 引擎缺少入口脚本");
+    if(requireOfflineHost&&!File.ReadAllText(loveLiveMain).Contains("__webgalOfflineExportHost"))
      throw new IOException("当前 LoveLive 引擎缺少逐帧导出入口，请更新工程引擎");
     return new EngineAdapter("lovelive",J.S(manifest,"version"),projectRuntime,RelativeBundle(projectRuntime,loveLiveMain),"project-runtime");
    }
