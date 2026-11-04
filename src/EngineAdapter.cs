@@ -149,6 +149,7 @@ namespace NativeVideo {
    }
    return null;
   }
+  public static bool IsLoveLiveProject(string root){return !string.IsNullOrEmpty(root)&&J.S(J.TryRead(Path.Combine(root,"webgal-engine.json")),"id")=="webgal-lovelive.lovelive";}
   public static object[] Options(string gamesRoot,string terreDir=null) {
    var options=new List<object>{J.O("value","webgal","label","WebGAL（原版）")};
    if(FindMygo(gamesRoot,terreDir)!=null)options.Add(J.O("value","mygo","label","MyGO 3.2.1"));
@@ -158,7 +159,7 @@ namespace NativeVideo {
    string projectRuntime=J.S(J.Get(request,"externalEngine"),"root",J.S(request,"project"));
    var selected=J.S(J.Get(request,"settings"),"engine","webgal");
    var manifest=J.TryRead(Path.Combine(projectRuntime,"webgal-engine.json"));
-   if(J.S(manifest,"id")=="webgal-lovelive.lovelive") {
+   if(IsLoveLiveProject(projectRuntime)) {
     string loveLiveMain=MainBundle(projectRuntime);
     if(loveLiveMain==null||!File.ReadAllText(loveLiveMain).Contains("__webgalOfflineExportHost"))
      throw new IOException("当前 LoveLive 引擎缺少逐帧导出入口，请更新工程引擎");

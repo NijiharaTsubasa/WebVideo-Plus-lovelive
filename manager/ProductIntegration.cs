@@ -21,8 +21,10 @@ namespace NativeVideo {
    prefix+=File.ReadAllText(Path.Combine(Files.Root,"product-ui/editor-runtime.js")).Replace("__WEBVIDEO_CHARACTER_MAP_ENABLED__",ModuleCatalog.NeedsKernel(modules)?"true":"false").Replace("__WEBVIDEO_MODULES__",J.Text(modules))+"\n";
    prefix+="const WebVideoUpdateContext="+J.Text(updateContext??J.O("productVersion",ProductVersion,"engineId","","engineVersion",""))+";\n"+File.ReadAllText(Path.Combine(Files.Root,"product-ui/update-check.js"))+"\n";
    source=Once(source,"jsxRuntimeExports.jsx(FastPreviewTimeoutDialog,{})","jsxRuntimeExports.jsx(WebVideoRuntimeHost,{}),jsxRuntimeExports.jsx(FastPreviewTimeoutDialog,{})");
+   if(modules.Contains("sharedAssets")){
+    source=Once(source,"function Assets({","function WebVideoLocalAssets({");foreach(var patch in J.A(J.Read(Path.Combine(Files.Root,"product-ui/shared-assets-patches.json"))))source=RegexOnceInScope(source,J.S(patch,"scopeStart"),J.S(patch,"scopeEnd"),J.S(patch,"regex",Regex.Escape(J.S(patch,"find"))),J.S(patch,"replace"),J.S(patch,"mygoRegex"),J.S(patch,"mygoReplace"));prefix+=File.ReadAllText(Path.Combine(Files.Root,"product-ui/shared-assets.js")).Replace("__WEBVIDEO_SHARED_ENABLED__","true")+"\n";
+   }
    if(ModuleCatalog.NeedsKernel(modules)){
-    source=Once(source,"function Assets({","function WebVideoLocalAssets({");foreach(var patch in J.A(J.Read(Path.Combine(Files.Root,"product-ui/shared-assets-patches.json"))))source=RegexOnceInScope(source,J.S(patch,"scopeStart"),J.S(patch,"scopeEnd"),J.S(patch,"regex",Regex.Escape(J.S(patch,"find"))),J.S(patch,"replace"),J.S(patch,"mygoRegex"),J.S(patch,"mygoReplace"));prefix+=File.ReadAllText(Path.Combine(Files.Root,"product-ui/shared-assets.js")).Replace("__WEBVIDEO_SHARED_ENABLED__",modules.Contains("sharedAssets")?"true":"false")+"\n";
     foreach(var patch in J.A(J.Read(Path.Combine(Files.Root,"product-ui/character-map-patches.json"))))source=Once(source,J.S(patch,"find"),J.S(patch,"replace"));
     var tip=Regex.Match(source,@"jsxRuntimeExports\.jsx\((Tooltip(?:\$\d+)?),");if(!tip.Success)throw new IOException("未识别到 Terre 提示控件");
     foreach(var patch in J.A(J.Read(Path.Combine(Files.Root,"product-ui/project-resources-patches.json"))))source=RegexOnceInScope(source,J.S(patch,"scopeStart"),J.S(patch,"scopeEnd"),J.S(patch,"regex",Regex.Escape(J.S(patch,"find"))),J.S(patch,"replace"));
