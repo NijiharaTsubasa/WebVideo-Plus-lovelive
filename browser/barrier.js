@@ -1,5 +1,35 @@
+globalThis.__exportWaitForGltf=async()=>{
+  const probe=globalThis.__wgProbe,stage=probe?.core?.gameplay?.pixiStage;
+  if(!stage||probe.adapter.id!=='lovelive')return;
+  const embed=globalThis.__pwClock?.controller?._embedder;
+  const realNow=()=>embed.performanceNow();
+  const start=realNow(),timeoutMs=120000;
+  while(true){
+    if(globalThis.__exportGltfFailure)throw new Error('glTF角色加载失败：'+String(globalThis.__exportGltfFailure?.message||globalThis.__exportGltfFailure));
+    const status=probe.getCharacterLoadingStatus();
+    if(status?.phase==='error')throw new Error('glTF角色准备失败：'+String(status.error?.message||status.error));
+    const figures=(stage.figureObjects||[]).filter(object=>object.sourceType==='gltf');
+    if(status?.phase!=='loading'&&figures.every(object=>object.gltfRuntime?.isReady&&object.pixiContainer?.children?.length)){
+      // A motion/expression command is a Promise queue even with cached inputs.
+      return;
+    }
+    for(const object of figures){
+      const runtime=object.gltfRuntime;
+      if(runtime&&!runtime.isReady){
+        let cancel=()=>{};
+        const deadline=new Promise((_,reject)=>{cancel=embed.setTimeout(()=>reject(new Error('glTF角色准备超时：'+object.key)),Math.max(1,timeoutMs-(realNow()-start)));});
+        try{await Promise.race([runtime.prepare(),deadline]);}finally{cancel();}
+      }
+    }
+    if(realNow()-start>timeoutMs)throw new Error('glTF角色准备超时：'+figures.filter(object=>!object.gltfRuntime?.isReady).map(object=>object.key).join(', '));
+    await new Promise(resolve=>embed.setTimeout(resolve,2));
+    await globalThis.__pwClock.controller.runFor(0);
+  }
+};
+
 function installStageAssetBarrier() {
  globalThis.__exportWaitForStageAssets=async()=>{
+  await __exportWaitForGltf();
   const stage=__wgProbe.core.gameplay.pixiStage;
   const missing=()=>[...stage.backgroundObjects,...stage.figureObjects].filter(object=>{
    if(!object.sourceUrl)return false;

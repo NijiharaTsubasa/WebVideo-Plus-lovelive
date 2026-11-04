@@ -13,6 +13,7 @@ namespace NativeVideo {
   const string BundledWebgalBundle = "assets/index-R1tKotR6.js";
   public readonly string Id, Version, Source, Bundle, SourceKind, FallbackReason;
   readonly bool externalWebgal, strictMygoHash;
+  public bool IsLoveLive { get { return Id == "lovelive"; } }
   public bool IsMygo { get { return Id == "mygo"; } }
   public bool RuntimeParity { get { return externalWebgal||SourceKind=="mygo-project-runtime"; } }
   EngineAdapter(string id, string version, string source, string bundle, string sourceKind, bool external=false, bool strictMygo=false, string fallbackReason=null) {
@@ -156,6 +157,13 @@ namespace NativeVideo {
   public static EngineAdapter Select(object request) {
    string projectRuntime=J.S(J.Get(request,"externalEngine"),"root",J.S(request,"project"));
    var selected=J.S(J.Get(request,"settings"),"engine","webgal");
+   var manifest=J.TryRead(Path.Combine(projectRuntime,"webgal-engine.json"));
+   if(J.S(manifest,"id")=="webgal-lovelive.lovelive") {
+    string loveLiveMain=MainBundle(projectRuntime);
+    if(loveLiveMain==null||!File.ReadAllText(loveLiveMain).Contains("__webgalOfflineExportHost"))
+     throw new IOException("当前 LoveLive 引擎缺少逐帧导出入口，请更新工程引擎");
+    return new EngineAdapter("lovelive",J.S(manifest,"version"),projectRuntime,RelativeBundle(projectRuntime,loveLiveMain),"project-runtime");
+   }
    if(selected=="webgal") {
     string projectReason,templateReason;
     var project=TryWebgalRuntime(projectRuntime,"project-runtime",out projectReason);
@@ -188,12 +196,21 @@ namespace NativeVideo {
    }
   }
   public void Prepare(string root) {
-   if(IsMygo||externalWebgal)CopyRuntimeShell(Source,root);
+   if(IsLoveLive||IsMygo||externalWebgal)CopyRuntimeShell(Source,root);
    else Files.CopyTree(Source,root);
    if(IsMygo){string html=Path.Combine(root,"index.html");Files.Atomic(html,RepairMygoHtml(File.ReadAllText(html)));}
    string file=Path.Combine(root,Bundle);
    if(!File.Exists(file))throw new IOException("导出运行时缺少主 bundle："+Bundle);
    if(IsMygo&&strictMygoHash&&Files.Hash(file)!=MygoHash)throw new IOException("MyGO 文件在准备过程中改变，请重新导出");
+   if(IsLoveLive) {
+    string html=Path.Combine(root,"index.html");
+    string script=File.ReadAllText(Path.Combine(Files.Root,"browser/lovelive-export-host.js"));
+    Files.Atomic(html,ReplaceOnce(File.ReadAllText(html),"<head>","<head><script>"+script+"</script>"));
+    Files.Atomic(file,PatchLoveLiveAssetQueue(File.ReadAllText(file)));
+    foreach(string extension in new[]{".gz",".br"})if(File.Exists(file+extension))File.Delete(file+extension);
+    J.Write(Path.Combine(root,"export-engine.json"),Describe());
+    return;
+   }
    string text=File.ReadAllText(file);
    if(externalWebgal)text=InstrumentExternalWebgal(text);
    Files.Atomic(file,Patch(text));
@@ -201,6 +218,18 @@ namespace NativeVideo {
    // prevents later tooling from mistaking them for the patched main bundle.
    foreach(string extension in new[]{".gz",".br"})if(File.Exists(file+extension))File.Delete(file+extension);
    J.Write(Path.Combine(root,"export-engine.json"),Describe());
+  }
+  static string PatchLoveLiveAssetQueue(string text) {
+   const string anchor="task callback must be a function";
+   int start=text.IndexOf(anchor,StringComparison.Ordinal);
+   int end=start<0?-1:text.IndexOf(".queue=function(",start,StringComparison.Ordinal);
+   if(start<0||end<0||end-start>4096||text.IndexOf(anchor,start+anchor.Length,StringComparison.Ordinal)>=0)
+    throw new IOException("LoveLive Pixi 素材队列入口不匹配");
+   string queue=text.Substring(start,end-start);
+   if(Regex.Matches(queue,@"\bsetTimeout\(").Count!=3)
+    throw new IOException("LoveLive Pixi 素材队列计时入口不匹配");
+   queue=queue.Replace("setTimeout(","globalThis.__webgalOfflineExportHost.scheduleAssetMount(");
+   return text.Substring(0,start)+queue+text.Substring(end);
   }
   static string ReplaceOnce(string text,string from,string to) {
    int at=text.IndexOf(from,StringComparison.Ordinal);

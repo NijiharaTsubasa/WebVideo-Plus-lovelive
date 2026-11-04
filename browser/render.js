@@ -731,12 +731,14 @@ globalThis.__installNativeRendering=({events,envelopes,fps,firstSimulationFrame=
     runScriptEvent(e);
   };
 
-  globalThis.__runExportScriptGroup=group=>{
-    if(group.length<=1){if(group.length)__runExportEvent(group[0]);return;}
+  globalThis.__runExportScriptGroup=async group=>{
+    if(!group.length)return;
+    if(group.length===1&&!__wgProbe.prepareFigures){__runExportEvent(group[0]);return;}
     pc.beginCollectingPerforms();
     globalThis.__exportBatchCollecting=true;
     try{for(const event of group)__runExportEvent(event);}
     finally{globalThis.__exportBatchCollecting=false;pc.endCollectingPerforms();}
+    if(group.some(event=>event.command==='changeFigure')) await __wgProbe.prepareFigures?.();
     __wgProbe.stageManager.commit({applyPixiEffects:false});
     pc.commitPendingPerforms();
     __wgProbe.stageManager.applyCommittedPixiEffects?.();
@@ -747,6 +749,7 @@ globalThis.__installNativeRendering=({events,envelopes,fps,firstSimulationFrame=
 globalThis.__stepExportFrame=async({t,elapsed,batch,lips})=>{
   globalThis.__exportCurrentSimulationMs=Number(t)||0;
   // Queue timestamps and motion phase must describe the same (already advanced) frame.
+  await __exportWaitForGltf();
   if(elapsed>0)await __pwClock.controller.runFor(elapsed);
   if(live2dBindingPending){await bindLive2DDeterminism();live2dBindingPending=false;}
   for(let i=0;i<batch.length;){
@@ -754,10 +757,15 @@ globalThis.__stepExportFrame=async({t,elapsed,batch,lips})=>{
     if(!String(event.command||'').startsWith('__')&&Number.isInteger(event.forwardGroup)){
       const group=[event];let j=i+1;
       while(j<batch.length&&!String(batch[j].command||'').startsWith('__')&&batch[j].forwardGroup===event.forwardGroup){group.push(batch[j]);j++;}
-      __runExportScriptGroup(group);i=j;
-    }else{__runExportEvent(event);i++;}
+      await __runExportScriptGroup(group);i=j;
+    }else{
+      if(String(event.command||'').startsWith('__'))__runExportEvent(event);
+      else await __runExportScriptGroup([event]);
+      i++;
+    }
   }
   if(batch.length)await __pwClock.controller.runFor(0);
+  await __exportWaitForGltf();
   if(globalThis.__exportDialoguePending){
     await globalThis.__exportWaitDialogueDom();
     globalThis.__exportFinishDialogueTransition();
@@ -768,6 +776,7 @@ globalThis.__stepExportFrame=async({t,elapsed,batch,lips})=>{
   for(const l of lips)__exportApplyLip(l);
   await __exportMedia.sync(t);
   __exportRefreshMouth();
+  __wgProbe.renderFigures?.();
   if(!globalThis.__gpuDomState)p.currentApp.render();
   globalThis.__exportRecordMouth(t);
   globalThis.__inspectFirstFrame?.(t);
