@@ -53,6 +53,29 @@ class ProjectResourceChecks {
    roleAssets.CollectSharedSource("changeFigure:"+store.ResourceUrl("figure",roleReference)+"+body/config.json -next;");
    roleAssets.CopyShared();
    Check(File.Exists(Path.Combine(roleStage,"game/3d/figure/__shared",roleId,"pair/head.glb")),"composed shared figure collects only the selected head");
+   var timingRoot=Path.Combine(root,"timing-figures");
+   var timingAssets=new ProjectAssets(loveProject,timingRoot,loveLive,"",null,loveAdapter);
+   var timingInput="changeFigure:pack/config.json+other/config.json -id=actor -enterDuration=700 -next;\n"+
+    "changeFigure:pack/config.json+other/config.json -id=actor -expression=happy;\n"+
+    "changeFigure:actor/model.json -id=actor -exitDuration=600;\n"+
+    "changeFigure:none -id=actor;\n"+
+    "changeFigure:actor/model.json; inline -comment; text";
+   var timingParsed=J.O("sentenceList",new[]{
+    J.O("commandRaw","changeFigure","content","./game/figure/pack/config.json+./game/figure/other/config.json","startLine",0),
+    J.O("commandRaw","changeFigure","content","./game/figure/pack/config.json+./game/figure/other/config.json","startLine",1),
+    J.O("commandRaw","changeFigure","content","./game/figure/actor/model.json","startLine",2),
+    J.O("commandRaw","changeFigure","content","","startLine",3),
+    J.O("commandRaw","changeFigure","content","./game/figure/actor/model.json","startLine",4),
+   });
+   var timingLines=timingAssets.PrepareTimingFigures(timingInput,timingParsed).Split('\n');
+   var placeholder=timingLines[0].Split(' ')[0];
+   Check(timingLines[0]==placeholder+" -id=actor -enterDuration=700 -next;"&&
+    timingLines[1]==placeholder+" -id=actor -expression=happy;"&&
+    !timingLines[2].StartsWith(placeholder,StringComparison.Ordinal)&&timingLines[2].EndsWith(" -id=actor -exitDuration=600;")&&
+    timingLines[3]=="changeFigure:none -id=actor;"&&
+    timingLines[4].EndsWith("; inline -comment; text")&&
+    Directory.GetFiles(Path.Combine(timingRoot,"game/figure/__webvideo_timing"),"*.png").Length==2,
+    "timing placeholders preserve figure identity, motion parameters and removal");
    var keepDto=J.D(Dto("保留引擎界面",false));keepDto["ignoreTemplate"]=true;Create(service,keepDto);Check(File.ReadAllText(Path.Combine(games,"保留引擎界面/game/template/template.json")).Contains("引擎界面"),"ignoreTemplate keeps the engine UI configuration");
    string custom=Path.Combine(terre,"data/templates/自定义 界面");Put(custom,"template.json","{\"name\":\"自定义界面\"}");Put(custom,"custom.css","body{}");var customDto=J.D(Dto("选择自定义界面",true));customDto["templateDir"]="自定义 界面";Create(service,customDto);Check(File.Exists(Path.Combine(games,"选择自定义界面/game/template/custom.css")),"selected custom template configuration copied");
    Fail(()=>Create(service,Dto("无效引擎层级",true,true,Path.Combine(engine,"assets"))),"create rejects incorrect engine directory");Check(!Directory.Exists(Path.Combine(games,"无效引擎层级")),"rejected create leaves no published project");

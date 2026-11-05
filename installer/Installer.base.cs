@@ -113,13 +113,33 @@ public partial class SetupEngine {
   }catch(OperationCanceledException){throw;}catch(Exception e){last=e;if(attempt+1<urls.Length*2)Report("下载暂时失败，保留进度并重试："+e.Message);}}
   throw new Exception("依赖下载失败。请检查网络后重试，已下载部分保留。",last);
  }
+ static void MoveMediaDirectory(string source,string destination,string operation){
+  for(int attempt=0;;attempt++){
+   try{Directory.Move(source,destination);return;}
+   catch(Exception error){
+    if(!(error is UnauthorizedAccessException)&&!(error is IOException))throw;
+    if(!Directory.Exists(source)||Directory.Exists(destination)||File.Exists(destination)||attempt==11)
+     throw new IOException(operation+"失败："+error.Message,error);
+    // Windows scanners can hold freshly written executables without delete sharing.
+    System.Threading.Thread.Sleep(Math.Min(1500,200*(attempt+1)));
+   }
+  }
+ }
  public void InstallBundledFFmpeg(RuntimePlan plan){
   Check();string target=Path.Combine(Tools,FFDirectory),stage=target+".stage-"+Guid.NewGuid().ToString("N"),backup=target+".previous-"+Guid.NewGuid().ToString("N");
   Directory.CreateDirectory(Path.Combine(stage,"bin"));try{
    foreach(string name in new[]{"ffmpeg.exe","ffprobe.exe"}){Check();string expected=name=="ffmpeg.exe"?"__FFMPEG_SHA256__":"__FFPROBE_SHA256__",source=Path.Combine(plan.BundledFFmpegDir,name),output=Path.Combine(stage,"bin",name);if(Hash(source)!=expected)throw new Exception("安装包中的 "+name+" 校验失败");File.Copy(source,output);if(Hash(output)!=expected||!ValidFF(output))throw new Exception(name+" 释放后验证未通过");}
    File.Copy(Path.Combine(plan.Payload,"licenses/FFMPEG-GPL-3.0.txt"),Path.Combine(stage,"LICENSE"));File.Copy(Path.Combine(plan.Payload,"licenses/FFMPEG-BUILD-README.txt"),Path.Combine(stage,"README.txt"));File.Copy(Path.Combine(plan.Payload,"licenses/FFMPEG-DEPENDENCY-NOTICES.txt"),Path.Combine(stage,"THIRD-PARTY-NOTICES.txt"));Check();
-   if(Directory.Exists(target))Directory.Move(target,backup);
-   try{Directory.Move(stage,target);}catch{if(Directory.Exists(backup)&&!Directory.Exists(target))Directory.Move(backup,target);throw;}
+   Report("正在提交 FFmpeg 工具目录…");
+   if(Directory.Exists(target))MoveMediaDirectory(target,backup,"移开旧 FFmpeg 工具目录");
+   try{MoveMediaDirectory(stage,target,"提交 FFmpeg 工具目录");}
+   catch(Exception installError){
+    if(Directory.Exists(backup)&&!Directory.Exists(target)){
+     try{MoveMediaDirectory(backup,target,"恢复旧 FFmpeg 工具目录");}
+     catch(Exception restoreError){throw new IOException(installError.Message+"；"+restoreError.Message+"。旧工具目录："+backup,restoreError);}
+    }
+    throw;
+   }
    if(Directory.Exists(backup)&&!DeletePayloadDirectory(backup))Report("旧 FFmpeg 工具目录仍被占用，保留在："+backup);
    plan.FFmpeg=Path.Combine(target,"bin/ffmpeg.exe");plan.FFprobe=Path.Combine(target,"bin/ffprobe.exe");plan.NeedFFmpeg=false;Report("已从安装包释放 FFmpeg 和 ffprobe");
   }finally{if(Directory.Exists(stage))DeletePayloadDirectory(stage);}

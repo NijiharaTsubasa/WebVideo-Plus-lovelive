@@ -35,7 +35,8 @@ namespace NativeVideo {
    }
    return string.Join("\n",lines);
   }
-  public static void WriteTransparentBackground(string root){string folder=Path.Combine(root,"game/background");Directory.CreateDirectory(folder);File.WriteAllBytes(Path.Combine(folder,TransparentBackground),TransparentPng);}
+  internal static void WriteTransparentImage(string file){Directory.CreateDirectory(Path.GetDirectoryName(file));File.WriteAllBytes(file,TransparentPng);}
+  public static void WriteTransparentBackground(string root){WriteTransparentImage(Path.Combine(root,"game/background",TransparentBackground));}
   public static void MarkPlan(object request,object plan){if(!SuppressBackground(request))return;J.D(plan)["backgroundSuppressed"]=true;J.D(plan)["backgroundReplacement"]=TransparentBackground;}
 
   public static async Task<object> MakeStageTransparent(BrowserHost browser){

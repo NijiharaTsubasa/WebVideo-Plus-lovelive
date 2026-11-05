@@ -299,8 +299,29 @@ namespace NativeVideo {
   public static bool SingleLineHint(string command,object sentence,Dictionary<string,object> args){if(command!="choose"||J.N(args,"defaultChoose",-1)!=1||J.B(args,"next"))return false;var options=Regex.Split(J.S(sentence,"content"),@"(?<!\\)\|");if(options.Length!=1)return false;var nodes=Regex.Split(options[0],@"(?<!\\):");return nodes.Length==2&&Regex.IsMatch(nodes[1].Trim(),@"^__wvp_hint_[A-Za-z0-9_]+$");}
   public static bool ConvertibleSingleChoose(string command,object sentence,Dictionary<string,object> args){if(command!="choose"||args.ContainsKey("wvpHint")||J.B(args,"next")||args.Keys.Any(key=>key!="defaultChoose"))return false;var options=Regex.Split(J.S(sentence,"content"),@"(?<!\\)\|");if(options.Length!=1||options[0].Contains("->"))return false;var nodes=Regex.Split(options[0],@"(?<!\\):");return nodes.Length==2&&!string.IsNullOrWhiteSpace(nodes[0])&&!string.IsNullOrWhiteSpace(nodes[1]);}
   void CheckJson(object text,bool array,int line,string label){try{object value=text is string?J.Parse((string)text):text;if(array?!(value is object[]):!(value is Dictionary<string,object>))throw new Exception(array?"应为动画帧数组":"应为对象");}catch(Exception e){Add("syntax",line,label,"参数无法解析："+e.Message);}}
-  public object Scan(object parsed,bool ignoreStageBackground=false){
-   if(Adapter.IsLoveLive) {
+  readonly HashSet<string> timingFigures=new HashSet<string>(StringComparer.Ordinal);
+  public string PrepareTimingFigures(string source,object parsed){
+   var lines=VideoWorkflow.CanonicalSource(source).Split('\n');
+   foreach(var sentence in J.A(J.Get(parsed,"sentenceList"))){
+    string command=J.S(sentence,"commandRaw"),content=J.S(sentence,"content");
+    if((command!="changeFigure"&&command!="miniAvatar")||J.B(sentence,"isLineBreakHolder")||
+      !Regex.IsMatch(content,@"\.(jsonl?|wmdl|skel)(?:[?#].*)?$|[?&]type=(?:live2d|spine)(?:[&#]|$)",RegexOptions.IgnoreCase))continue;
+    int first=(int)J.N(sentence,"startLine",-1);
+    if(first<0||first>=lines.Length)throw new IOException("时间分析立绘语句边界无效");
+    string line=lines[first];int colon=line.IndexOf(':'),args=line.IndexOf(" -",colon+1,StringComparison.Ordinal);
+    var comment=Regex.Match(line,@"(?<!\\);");
+    int end=comment.Success?comment.Index:line.Length;
+    if(args>=0)end=Math.Min(end,args);
+    if(colon<0||end<=colon)throw new IOException("时间分析无法保留立绘语句参数");
+    // One image per original reference preserves same-figure updates and replacements.
+    string name="__webvideo_timing/"+Files.HashText(content)+".png";
+    if(timingFigures.Add(name))LayerExport.WriteTransparentImage(Files.Under(Path.Combine(Root,"game/figure"),name));
+    lines[first]=line.Substring(0,colon+1)+name+line.Substring(end);
+   }
+   return string.Join("\n",lines);
+  }
+  public object Scan(object parsed,bool ignoreStageBackground=false,bool timingOnly=false){
+   if(Adapter.IsLoveLive&&!timingOnly) {
     var tree=Path.Combine(Project,"game/3d");
     if(Directory.Exists(tree))foreach(var file in Directory.EnumerateFiles(tree,"*",SearchOption.AllDirectories))
      copies[Files.Under(Path.Combine(Root,"game/3d"),file.Substring(tree.Length+1))]=file;
@@ -321,7 +342,8 @@ namespace NativeVideo {
     int first=Math.Max(0,(int)J.N(s,"startLine",i)),last=Math.Max(first,(int)J.N(s,"endLine",first)),line=first+1,endLine=last+1;
     string cmd=J.N(s,"command",-1)==0?"say":J.S(s,"commandRaw");
     var p=Params(s);
-    CollectSharedNamedArgs(p);
+    bool timingFigure=(cmd=="changeFigure"||cmd=="miniAvatar")&&timingFigures.Count>0&&timingFigures.Contains(PhysicalName(Clean("figure",J.S(s,"content"))));
+    if(!timingFigure)CollectSharedNamedArgs(p);
     if(!known.Contains(cmd)){RequireModelLibraries(J.S(s,"content"),null,true);AddWarning("custom-command",line,cmd,"检测到非标准或深度定制引擎指令；WebVideo+ 会按当前运行时执行，但不保证其隐藏状态能够跨 Worker 恢复。");}
     if(RuntimeVariable(J.S(s,"content"))||p.Values.OfType<string>().Any(RuntimeVariable))AddWarning("runtime-variable",line,cmd,"检测到运行时变量插值。导出使用独立临时运行环境，不保证继承玩家存档中的变量值。");
     bool singleLineHint=SingleLineHint(cmd,s,p),convertibleSingleChoose=ConvertibleSingleChoose(cmd,s,p);
@@ -331,8 +353,8 @@ namespace NativeVideo {
     if(cmd=="setTransform"||cmd=="setTempAnimation")CheckJson(J.Get(s,"content"),cmd=="setTempAnimation",line,cmd);
     if(p.ContainsKey("transform"))CheckJson(p["transform"],false,line,"transform");
     double wait;if(cmd=="wait"&&(!double.TryParse(J.S(s,"content"),out wait)||wait<0))Add("syntax",line,"wait","等待时长需要是非负毫秒数");
-    if((cmd=="changeFigure"||cmd=="miniAvatar")&&J.S(s,"content")!="none"&&p.Keys.Any(key=>new[]{"motion","skin","expression","blink","focus","animationFlag"}.Contains(key)||Regex.IsMatch(key,"model|live2d|cubism",RegexOptions.IgnoreCase)||key=="type"&&!new[]{"image","img","video"}.Contains(J.S(p,key),StringComparer.OrdinalIgnoreCase)))RequireModelLibraries(J.S(s,"content"),null,true);
-    if(mapping.ContainsKey(cmd)&&!(ignoreStageBackground&&cmd=="changeBg"))Ref(mapping[cmd],J.S(s,"content"),line,skip);
+    if(!timingFigure&&(cmd=="changeFigure"||cmd=="miniAvatar")&&J.S(s,"content")!="none"&&p.Keys.Any(key=>new[]{"motion","skin","expression","blink","focus","animationFlag"}.Contains(key)||Regex.IsMatch(key,"model|live2d|cubism",RegexOptions.IgnoreCase)||key=="type"&&!new[]{"image","img","video"}.Contains(J.S(p,key),StringComparer.OrdinalIgnoreCase)))RequireModelLibraries(J.S(s,"content"),null,true);
+    if(!timingFigure&&mapping.ContainsKey(cmd)&&!(ignoreStageBackground&&cmd=="changeBg"))Ref(mapping[cmd],J.S(s,"content"),line,skip);
     if(cmd=="changeFigure"){
      var value=J.S(s,"content");
      if(Regex.IsMatch(value,@"\.(skel|mkv)([?#].*)?$",RegexOptions.IgnoreCase)||value.Contains("type=spine"))Add("unsupported",line,value,"当前不支持此立绘格式");
