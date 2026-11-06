@@ -16,6 +16,7 @@ namespace NativeVideo {
   public bool IsLoveLive { get { return Id == "lovelive"; } }
   public bool IsMygo { get { return Id == "mygo"; } }
   public bool RuntimeParity { get { return externalWebgal||SourceKind=="mygo-project-runtime"; } }
+  internal string PlanningAutoSavePatchStatus { get; private set; }
   EngineAdapter(string id, string version, string source, string bundle, string sourceKind, bool external=false, bool strictMygo=false, string fallbackReason=null) {
    Id=id; Version=version; Source=source; Bundle=bundle; SourceKind=sourceKind; externalWebgal=external; strictMygoHash=strictMygo; FallbackReason=fallbackReason;
   }
@@ -205,22 +206,30 @@ namespace NativeVideo {
    string file=Path.Combine(root,Bundle);
    if(!File.Exists(file))throw new IOException("导出运行时缺少主 bundle："+Bundle);
    if(IsMygo&&strictMygoHash&&Files.Hash(file)!=MygoHash)throw new IOException("MyGO 文件在准备过程中改变，请重新导出");
+   string text=File.ReadAllText(file);
    if(IsLoveLive) {
     string html=Path.Combine(root,"index.html");
     string script=File.ReadAllText(Path.Combine(Files.Root,"browser/lovelive-export-host.js"));
     Files.Atomic(html,ReplaceOnce(File.ReadAllText(html),"<head>","<head><script>"+script+"</script>"));
-    Files.Atomic(file,PatchLoveLiveAssetQueue(File.ReadAllText(file)));
-    foreach(string extension in new[]{".gz",".br"})if(File.Exists(file+extension))File.Delete(file+extension);
-    J.Write(Path.Combine(root,"export-engine.json"),Describe());
-    return;
+    text=PatchLoveLiveAssetQueue(text);
+   } else {
+    if(externalWebgal)text=InstrumentExternalWebgal(text);
+    text=Patch(text);
    }
-   string text=File.ReadAllText(file);
-   if(externalWebgal)text=InstrumentExternalWebgal(text);
-   Files.Atomic(file,Patch(text));
+   string autoSavePatch;
+   Files.Atomic(file,PatchPlanningAutoSave(text,out autoSavePatch));
+   PlanningAutoSavePatchStatus=autoSavePatch;
    // SnapshotServer serves raw files only; removing stale compressed copies also
    // prevents later tooling from mistaking them for the patched main bundle.
    foreach(string extension in new[]{".gz",".br"})if(File.Exists(file+extension))File.Delete(file+extension);
    J.Write(Path.Combine(root,"export-engine.json"),Describe());
+  }
+  static string PatchPlanningAutoSave(string text,out string status) {
+   // Locate the scheduled fast save, leaving explicit saves and the rendering workers intact.
+   var matches=Regex.Matches(text,@"async function (?<save>[$\w]+)\(\)\s*\{[^{}]{0,600}\.dispatch\([^{}]{0,100}\.setFastSave\([^{}]{0,100}\)[^{}]{0,120}\}\s*(?:const|let|var)\s+[$\w]+\s*=\s*[$\w]+\(\s*\(\)\s*=>\s*\{\s*(?<call>\k<save>\(\))\s*;?\s*\}\s*,\s*(?:1e3|1000)\s*\)",RegexOptions.CultureInvariant);
+   status=matches.Count==1?"disabled-in-planner":matches.Count==0?"unrecognized":"ambiguous";
+   if(matches.Count!=1)return text;
+   return text.Insert(matches[0].Groups["call"].Index,"if(!globalThis.__nativePlanning) ");
   }
   static string PatchLoveLiveAssetQueue(string text) {
    const string anchor="task callback must be a function";
