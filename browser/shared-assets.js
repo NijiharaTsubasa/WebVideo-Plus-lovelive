@@ -30,7 +30,59 @@ const WebVideoSharedMaterials=(()=>{
   }
   return {enabled,useFigureMetadata:WebVideoUseFigureMetadata,formatFigureReference:WebVideoFormatFigureReference,kinds,request,reference,file,supported,waitPreview,resolve,isResourceUrl,thumbnailUrl,exportGame,setResourcePrefix(value){resourcePrefix=value;}};
 })();
-function Assets(props){const root=props.rootPath??[],base=props.basePath??[],eligible=root[0]==='games'&&root[2]==='game'&&(!base.length||base.join("/")=="3d/figure"||Object.hasOwn(WebVideoSharedMaterials.kinds,base[0]));return reactExports.createElement(eligible?WebVideoSharedAssets:WebVideoLocalAssets,eligible?{...props,key:root[1]+':'+base.join('/')}:props);}
+let WebVideoFigureChooserContext;
+function webVideoFigureChooserContext(){
+ return WebVideoFigureChooserContext??=reactExports.createContext(null);
+}
+function WebVideoLoveLiveFigureChooser(props){
+ if(!props.toolbar||!WebVideoSharedMaterials.enabled)return reactExports.createElement(ChooseFile,props);
+ return reactExports.createElement(WebVideoLoveLiveFigureTabs,props);
+}
+function webVideoSharedFigureLocation(reference){
+ const paths=splitFigureConfigs(reference);
+ for(const [index,path] of paths.entries()){
+  if(!WebVideoSharedMaterials.isResourceUrl(path))continue;
+  try{
+   const match=/^\/webvideo-shared\/[^/]+\/([a-f0-9]{32})\/(.+)$/.exec(new URL(path).pathname);
+   if(!match)continue;
+   const segments=match[2].split('/').map(decodeURIComponent);
+   return {library:match[1],folder:segments.slice(0,-1).join('/'),initialPath:segments.join('/'),role:index===1?'body':'head'};
+  }catch{continue;}
+ }
+}
+function WebVideoLoveLiveFigureTabs(props){
+ const R=reactExports,h=R.createElement,[shared,setShared]=R.useState(false),location=R.useRef({});
+ const open=props.sharedFigure?()=>{
+  const figure=props.sharedFigure;
+  const initial=webVideoSharedFigureLocation(figure.reference);
+  if(initial)location.current=initial;
+  else delete location.current.initialPath;
+  setShared(!!initial);
+  figure.onTabChange(!!initial);
+  figure.open(initial?.role);
+ }:props.onOpen;
+ const localButtons=R.Children.map(props.toolbar.props.children,item=>{
+  if(!R.isValidElement(item)||typeof item.props['aria-pressed']!=='boolean')return item;
+  const selected=item.props['aria-pressed'];
+  return R.cloneElement(item,{appearance:!shared&&selected?'primary':'secondary','aria-pressed':!shared&&selected,onClick:event=>{
+   setShared(false);props.sharedFigure?.onTabChange(false);
+   if(!shared||!selected)item.props.onClick?.(event);
+  }});
+ });
+ const toolbar=h(R.Fragment,null,localButtons,h(Button,{appearance:shared?'primary':'secondary','aria-pressed':shared,onClick:()=>{setShared(true);props.sharedFigure?.onTabChange(true);}},'共享'));
+ return h(webVideoFigureChooserContext().Provider,{value:{shared,location,figure:props.sharedFigure}},h(ChooseFile,{...props,toolbar,onOpen:open,selectedFilePath:shared&&props.sharedFigure?undefined:props.selectedFilePath}));
+}
+function Assets(props){const picker=reactExports.useContext(webVideoFigureChooserContext());if(picker)return reactExports.createElement(picker.shared?WebVideoSharedAssets:WebVideoLocalAssets,picker.shared?{...props,sharedFigureLocation:picker.location,sharedFigure:picker.figure}:props);const root=props.rootPath??[],base=props.basePath??[],eligible=root[0]==='games'&&root[2]==='game'&&(!base.length||base.join("/")=="3d/figure"||Object.hasOwn(WebVideoSharedMaterials.kinds,base[0]));return reactExports.createElement(eligible?WebVideoSharedAssets:WebVideoLocalAssets,eligible?{...props,key:root[1]+':'+base.join('/')}:props);}
+
+let webVideoNamedRequest;
+window.__webgalLoveLiveSharedNamedOptions=()=>webVideoNamedRequest??=WebVideoSharedMaterials.request('/api/shared/gltf-named',{}).then(rows=>{
+ const libraries=new Map(rows.map(row=>[row.libraryId,{id:row.libraryId,name:row.libraryName}]));
+ const labels=WebVideoSharedLibraryNames([...libraries.values()]);
+ return rows.map(row=>{
+  const path=row.relativePath.replace(/\.(?:motionbin|mtn|exp\.json)$/i,'').split('/');
+  return {url:row.url,type:row.type,path:['共享引擎资源 '+labels.get(row.libraryId),...path]};
+ });
+}).finally(()=>{webVideoNamedRequest=undefined;});
 
 async function WebVideoSelectGltfModel(request){
  const paths=splitFigureConfigs(request.path);
@@ -39,6 +91,9 @@ async function WebVideoSelectGltfModel(request){
  const models=await Promise.all(paths.map(async (path,index)=>{
   const url=shared(path)?path:"/games/"+encodeURIComponent(request.gameName)+"/game/3d/figure/"+path;
   const parts=figurePartConfig((await axios$1.get(url)).data);
+  if(!(parts.length===1&&['integrated','head','body'].includes(parts[0].role)
+   ||parts.length===2&&parts.some(part=>part.role==='head')&&parts.some(part=>part.role==='body')))
+   throw Error('所选配置必须包含一个完整模型、单独的头部或身体，或恰好一个头部和一个身体。');
   if(paths.length===1)return parts;
   const role=index===0?"head":"body";
   const selected=parts.find(part=>part.role===role);
@@ -70,74 +125,124 @@ function WebVideoSharedNamedPicker({kind,onValueChange}){
   rows&&!rows.length&&h('span',{role:'status'},'共享库中没有可选素材'),
   error&&h('span',{role:'alert'},error));
 }
-function WebVideoSharedFileList({rootPath,entries,selected,onOpen,onCopy}){
+function WebVideoSharedFileList({rootPath,entries,selected,onOpen,onCopy,loadModelPreview}){
  const R=reactExports,h=R.createElement,viewType=useEditorStore.use.viewType();
+ const revealed=R.useRef(null);
  return h('div',{style:{flex:1,minHeight:48,position:'relative'},'aria-label':'共享素材列表',role:'list'},h(AutoSizer,null,({height,width})=>{
   const columns=Math.max(1,Math.floor(width/(viewType==='grid'?96:192))),rowHeight=viewType==='grid'?width/columns:28;
-  return h(FixedSizeList,{height,width,itemCount:Math.ceil(entries.length/columns),itemSize:rowHeight},({index,style})=>h('div',{style:{...style,display:'grid',gridTemplateColumns:`repeat(${columns},1fr)`}},entries.slice(index*columns,(index+1)*columns).map(file=>h('div',{key:file.path,'data-wvp-shared-entry':file.path,title:file.sharedLibrary?.root,role:'listitem',tabIndex:0,onKeyDown:e=>{if(e.target===e.currentTarget&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onOpen(file);}},style:{minWidth:0}},h(FileElement,{rootPath,file,type:viewType,selected:selected?.path===file.originalPath,isProtected:true,desc:file.sourceScope,handleOpenFile:()=>onOpen(file),handleBackupFile:()=>onCopy(file),handleRenameFile:()=>{},handleDeleteFile:()=>{},checkHasFile:()=>false})))));
+  const reveal=list=>{
+   if(!list||!selected?.reveal||revealed.current===selected)return;
+   const index=entries.findIndex(file=>file.originalPath===selected.path);
+   if(index<0)return;
+   revealed.current=selected;
+   list.scrollToItem(Math.floor(index/columns),'smart');
+  };
+  return h(FixedSizeList,{height,width,ref:selected?.reveal?reveal:undefined,itemCount:Math.ceil(entries.length/columns),itemSize:rowHeight},({index,style})=>h('div',{style:{...style,display:'grid',gridTemplateColumns:`repeat(${columns},1fr)`}},entries.slice(index*columns,(index+1)*columns).map(file=>h('div',{key:file.path,'data-wvp-shared-entry':file.path,title:file.sharedLibrary?.root,role:'listitem',tabIndex:0,onKeyDown:e=>{if(e.target===e.currentTarget&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onOpen(file);}},style:{minWidth:0}},h(FileElement,{rootPath,file,type:viewType,selected:selected?.path===file.originalPath,isProtected:true,model:file.model,loadModelPreview,desc:file.sourceScope,handleOpenFile:()=>onOpen(file),handleBackupFile:()=>{if(!loadModelPreview||!file.isDir||file.modelPackage)onCopy(file);},handleRenameFile:()=>{},handleDeleteFile:()=>{},checkHasFile:()=>false})))));
  }));
 }
 function WebVideoSharedAssets(props){
  if(!WebVideoSharedMaterials.enabled)return reactExports.createElement(WebVideoLocalAssets,props);
  const R=reactExports,h=R.createElement,M=WebVideoSharedMaterials,base=props.basePath??[],project=props.rootPath[1];const {mutate:refreshLocal}=useSWRConfig();
- const selectedPath=(props.selectedFilePath??[]).join('/');
+ const sharedOnly=!!props.sharedFigureLocation;
+ const path=(props.selectedFilePath??[]).join('/');
+ const selectedPath=sharedOnly?path.replace(/^http:\/+/, 'http://'):path;
  const remote=/^http:\/127\.0\.0\.1:\d+\/webvideo-shared\/[a-f0-9]{32}\/([a-f0-9]{32})\/(.*)$/.exec(selectedPath);
  const initial=remote??/^(?:(?:figure|background|bgm|vocal|video)\/)?__shared\/([a-f0-9]+)\/(.*)$/.exec(selectedPath);
  const initialFolder=initial?.[2]?.split('/').slice(0,props.chooseModelDirectory?undefined:-1).map(part=>{
   try{return remote?decodeURIComponent(part):part;}catch{return part;}
  }).join('/')??'';
  const localProps={...props,...(initial?{selectedFilePath:[]}:{}),...(base.includes('__shared')?{basePath:base.slice(0,1)}:{})};
- const [localPath,setLocalPath]=R.useState(base),[libraries,setLibraries]=R.useState([]),[library,setLibrary]=R.useState(initial?.[1]||''),[folder,setFolder]=R.useState(initialFolder),[entries,setEntries]=R.useState([]),[selected,setSelected]=R.useState(null),[busy,setBusy]=R.useState(false),[error,setError]=R.useState(''),[notice,setNotice]=R.useState(''),[filter,setFilter]=R.useState(''),[refreshKey,setRefreshKey]=R.useState(0),[manage,setManage]=R.useState(false),[copyTargets,setCopyTargets]=R.useState(false),[expanded,setExpanded]=R.useState(null);
- const is3D=base.join("/")=="3d/figure",currentKind=is3D?"figure":Object.hasOwn(M.kinds,localPath[0])?localPath[0]:null,showShared=!localPath.length||!!currentKind,sharedExpanded=expanded??libraries.length>0;
+ const stored=props.sharedFigureLocation?.current;
+ const contextRole=R.useContext(sharedOnly?ModelPreviewRoleContext:webVideoFigureChooserContext());
+ const role=sharedOnly?contextRole:undefined;
+ const [localPath,setLocalPath]=R.useState(base),[libraries,setLibraries]=R.useState([]),[library,setLibrary]=R.useState(stored?.library??initial?.[1]??''),[folder,setFolder]=R.useState(stored?.folder??initialFolder),[entries,setEntries]=R.useState([]),[selected,setSelected]=R.useState(null),[busy,setBusy]=R.useState(false),[error,setError]=R.useState(''),[notice,setNotice]=R.useState(''),[filter,setFilter]=R.useState(''),[refreshKey,setRefreshKey]=R.useState(0),[manage,setManage]=R.useState(false),[copyTargets,setCopyTargets]=R.useState(false),[expanded,setExpanded]=R.useState(null);
+ const is3D=base.join("/")=="3d/figure",currentKind=sharedOnly||is3D?"figure":Object.hasOwn(M.kinds,localPath[0])?localPath[0]:null,showShared=!localPath.length||!!currentKind,sharedExpanded=sharedOnly||(expanded??libraries.length>0);
  const viewType=useEditorStore.use.viewType(),updateViewType=useEditorStore.use.updateViewType(),sortBy=useEditorStore.use.sortBy(),sortOrder=useEditorStore.use.sortOrder();
  const generation=R.useRef(0),copying=R.useRef(false),pendingCopy=R.useRef(null),previewing=R.useRef(null),alive=R.useRef(true);
- const [modelPreview,setModelPreview]=R.useState(null);
- const selectedModel=is3D&&selected?.name==="config.json"?selected.webVideoResourceUrl:null;
- R.useEffect(()=>{
-  setModelPreview(null);
-  if(!selectedModel)return;
-  const controller=new AbortController();
-  fetch(selectedModel,{signal:controller.signal}).then(response=>response.ok?response.json():null)
-   .then(config=>{
-    if(controller.signal.aborted)return;
-    const models=config?.components?.filter(part=>part.type==="model")??[];
-    setModelPreview(models.find(part=>part.role==="integrated")??models.find(part=>part.role==="head")??models[0]??null);
-   }).catch(()=>{});
-  return ()=>controller.abort();
- },[selectedModel]);
+ const highlightStandalone=props.sharedFigure?.onStandaloneHighlight;
+ R.useLayoutEffect(()=>{
+  highlightStandalone?.(!!selected&&(!selected.modelPackage||selected.modelPackage.models.some(part=>part.role==='integrated')));
+  return ()=>highlightStandalone?.(false);
+ },[selected,highlightStandalone]);
+ R.useEffect(()=>()=>previewing.current?.abort(),[role]);
+ const loadModelPreview=R.useMemo(()=>sharedOnly?createModelPreviewLoader(async url=>{
+  const response=await fetch(url);
+  if(!response.ok)throw Error('HTTP '+response.status);
+  return response.json();
+ }):undefined,[sharedOnly,library,folder,refreshKey,role]);
+ R.useEffect(()=>{if(stored)Object.assign(stored,{library,folder});},[stored,library,folder]);
  R.useEffect(()=>{alive.current=true;return()=>{alive.current=false;generation.current++;previewing.current?.abort();};},[]);
  const run=async action=>{if(copying.current)return;setError('');setNotice('');setBusy(true);try{return await action();}catch(e){if(alive.current&&e.name!=='AbortError')setError(WebVideoServiceErrors.describe(e));}finally{if(alive.current)setBusy(false);}};
  const refresh=async()=>{const result=await M.request('/api/shared/libraries');M.setResourcePrefix(result.resourcePrefix);if(alive.current){setLibraries(result.libraries);if(result.resourceError)setError(WebVideoServiceErrors.describe(Error(result.resourceError)));}return result.libraries;};
  R.useEffect(()=>{run(refresh);},[]);
- R.useEffect(()=>{if(!showShared||!sharedExpanded||!library)return;const current=++generation.current;setSelected(null);setEntries([]);setError('');const controller=new AbortController();M.request('/api/shared/list',{id:library,path:folder},controller.signal).then(result=>{if(current===generation.current&&alive.current)setEntries(result.entries);},e=>{if(e.name!=='AbortError'&&current===generation.current&&alive.current)setError(WebVideoServiceErrors.describe(e));});return()=>controller.abort();},[showShared,sharedExpanded,library,folder,refreshKey]);
+ R.useEffect(()=>{if(!showShared||!sharedExpanded||!library)return;const current=++generation.current;setSelected(null);setEntries([]);setError('');const controller=new AbortController();M.request('/api/shared/list',{id:library,path:folder,figurePackages:sharedOnly},controller.signal).then(result=>{
+  if(current!==generation.current||!alive.current)return;
+  const rows=sharedOnly&&result.modelPackage
+   ?[{name:folder.split('/').at(-1)||result.library.name,path:folder,isDir:true,modelPackage:result.modelPackage}]
+   :result.entries;
+  setEntries(rows);
+  if(stored?.initialPath){
+   const entry=rows.find(entry=>(entry.modelPackage?.path??entry.path)===stored.initialPath);
+   delete stored.initialPath;
+   if(entry)setSelected({...entry,path:entry.modelPackage?.path??entry.path,reveal:true});
+  }
+ },e=>{if(e.name!=='AbortError'&&current===generation.current&&alive.current)setError(WebVideoServiceErrors.describe(e));});return()=>controller.abort();},[showShared,sharedExpanded,library,folder,refreshKey]);
  R.useEffect(()=>{previewing.current?.abort();setSelected(null);setCopyTargets(false);},[currentKind]);
  const active=libraries.find(l=>l.id===library),available=libraries.filter(l=>!currentKind||l.kind==='all'||l.kind===currentKind);
  R.useEffect(()=>{if(active&&currentKind&&active.kind!=='all'&&active.kind!==currentKind){setLibrary('');setFolder('');setSelected(null);}},[currentKind,active?.id]);
  const chooseLibrary=id=>{setLibrary(id);setFolder('');setSelected(null);setFilter('');setError('');setNotice('');setManage(false);setCopyTargets(false);};
  const add=()=>run(async()=>{const picked=await M.request('/api/shared/dialog',{});if(picked.canceled)return;const result=await M.request('/api/shared/add',{path:picked.path,kind:'all'});await refresh();setExpanded(true);chooseLibrary(result.id);});
  const referenceKind=entry=>currentKind||(active?.kind!=='all'&&active?.kind)||(/\.(?:mp3|wav|ogg|opus|m4a|aac|flac)$/i.test(entry?.path??'')?'vocal':/\.(?:mp4|webm|mov|mkv)$/i.test(entry?.path??'')?'video':'figure');
- const choose=async entry=>{if(!M.supported(entry.path))throw Error('文件名含剧本保留字符，请调整素材文件名后引用');const kind=referenceKind(entry),url=await M.resolve(kind,library,entry);if(alive.current)props.fileFunction?.open?.(M.file(kind,library,entry,url),'asset');};
- const copy=(entry=selected,kind=currentKind)=>{if(!entry||previewing.current)return;if(!kind){setCopyTargets(true);return;}return run(async()=>{copying.current=true;try{const signature=project+'|'+kind+'|'+library+'|'+entry.path,result=await M.request('/api/shared/copy',{requestId:(pendingCopy.current?.key===signature?pendingCopy.current:pendingCopy.current={key:signature,id:crypto.randomUUID()}).id,project,kind,reference:M.reference(library,entry.path)});pendingCopy.current=null;if(alive.current){setCopyTargets(false);setNotice('已复制到 '+result.kind+'/'+result.reference);setSelected({...entry,localReference:result.reference,localKind:result.kind});window.dispatchEvent(new CustomEvent('webvideo:shared-copied',{detail:{project,kind:result.kind,reference:result.reference}}));await refreshLocal([...props.rootPath,...result.kind.split('/')].join('/'));}}finally{copying.current=false;}});};
- const preview=()=>{if(!selected||copying.current||previewing.current)return;const kind=referenceKind(selected),controller=new AbortController(),stopObserving=useEditorStore.subscribe((state,previous)=>{if(previous.isShowPreview&&!state.isShowPreview)controller.abort();});previewing.current=controller;return run(async()=>{const ref=M.reference(library,selected.path);if(!M.supported(ref))throw Error('文件名含剧本保留字符，请调整素材文件名后预览');const url=await M.resolve(kind,library,selected,controller.signal);if(!alive.current||controller.signal.aborted||useEditorStore.getState().subPage!==project)return;await M.waitPreview(project,controller.signal);if(!alive.current||controller.signal.aborted||useEditorStore.getState().subPage!==project)return;const commands={figure:'changeFigure',background:'changeBg',bgm:'bgm',vocal:'playEffect',video:'playVideo'};if(!EditorPreviewClient.setComponentVisibility({showStarter:false,showTitle:false,showMenuPanel:false,isEnterGame:true,isShowLogo:false})||!EditorPreviewClient.runSnippet(commands[kind]+':'+url+';'))throw Error('预览连接已断开，请重试');}).finally(()=>{stopObserving();if(previewing.current===controller)previewing.current=null;});};
+ const needsFigureJsonCheck=entry=>sharedOnly&&!entry.modelPackage&&/\.json$/i.test(entry.path);
+ async function resolveEntry(kind,entry,signal){
+  const url=await M.resolve(kind,library,entry,signal);
+  if(needsFigureJsonCheck(entry)){
+   const response=await fetch(url,{signal,cache:'no-cache'});
+   if(!response.ok)throw Error('无法读取共享立绘：HTTP '+response.status);
+   const config=await response.json().catch(()=>null);
+   const live2d=(typeof config?.FileReferences?.Moc==='string'&&!!config.FileReferences.Moc)
+    ||(typeof config?.model==='string'&&!!config.model&&Array.isArray(config.textures));
+   const spine=Array.isArray(config?.bones);
+   if(!live2d&&!spine)throw Error('所选 JSON 不是有效的立绘配置。');
+  }
+  return url;
+ }
+ const choose=async entry=>{if(!M.supported(entry.path))throw Error('文件名含剧本保留字符，请调整素材文件名后引用');const kind=referenceKind(entry),url=await resolveEntry(kind,entry);if(alive.current)await props.fileFunction?.open?.({...M.file(kind,library,entry,url),...(sharedOnly?{webVideoFigureType:entry.modelPackage?'3d':'2d'}:{})},'asset');};
+ const copy=(entry=selected,kind=currentKind)=>{if(!entry||previewing.current)return;if(!kind){setCopyTargets(true);return;}return run(async()=>{copying.current=true;try{if(needsFigureJsonCheck(entry))await resolveEntry(kind,entry);const signature=project+'|'+kind+'|'+library+'|'+entry.path,result=await M.request('/api/shared/copy',{requestId:(pendingCopy.current?.key===signature?pendingCopy.current:pendingCopy.current={key:signature,id:crypto.randomUUID()}).id,project,kind,reference:M.reference(library,entry.path)});pendingCopy.current=null;if(alive.current){setCopyTargets(false);setNotice('已复制到 '+result.kind+'/'+result.reference);setSelected({...entry,localReference:result.reference,localKind:result.kind});window.dispatchEvent(new CustomEvent('webvideo:shared-copied',{detail:{project,kind:result.kind,reference:result.reference}}));await refreshLocal([...props.rootPath,...result.kind.split('/')].join('/'));}}finally{copying.current=false;}});};
+ const preview=()=>{if(!selected||copying.current||previewing.current)return;const kind=referenceKind(selected),controller=new AbortController(),stopObserving=useEditorStore.subscribe((state,previous)=>{if(previous.isShowPreview&&!state.isShowPreview)controller.abort();});previewing.current=controller;return run(async()=>{const ref=M.reference(library,selected.path);if(!M.supported(ref))throw Error('文件名含剧本保留字符，请调整素材文件名后预览');const url=await resolveEntry(kind,selected,controller.signal);
+ const path=selected.modelPackage&&props.sharedFigure?await props.sharedFigure.previewPath(url):url;if(!alive.current||controller.signal.aborted||useEditorStore.getState().subPage!==project)return;await M.waitPreview(project,controller.signal);if(!alive.current||controller.signal.aborted||useEditorStore.getState().subPage!==project)return;const commands={figure:'changeFigure',background:'changeBg',bgm:'bgm',vocal:'playEffect',video:'playVideo'};if(!EditorPreviewClient.setComponentVisibility({showStarter:false,showTitle:false,showMenuPanel:false,isEnterGame:true,isShowLogo:false})||!EditorPreviewClient.runSnippet(commands[kind]+':'+path+';'))throw Error('预览连接已断开，请重试');}).finally(()=>{stopObserving();if(previewing.current===controller)previewing.current=null;});};
  const displayEntries=R.useMemo(()=>{
   if(!library){const names=WebVideoSharedLibraryNames(available);return available.filter(l=>l.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())).map(l=>({name:names.get(l.id),path:l.id,isDir:true,extName:'',sharedLibrary:l,sourceScope:l.kind==='all'?undefined:M.kinds[l.kind]}));}
   const allowed=props.allowedExtNames??(currentKind?({figure:['.png','.jpg','.jpeg','.webp','.json'],background:['.png','.jpg','.jpeg','.webp','.mp4','.webm','.mkv'],bgm:['.mp3','.ogg','.wav','.opus'],vocal:['.mp3','.ogg','.wav','.opus'],video:['.mp4','.webm','.mkv']})[currentKind]:[]);
-  const list=entries.filter(e=>(e.isDir||(!is3D||e.name==="config.json")&&(!allowed.length||allowed.includes(e.extName)))&&e.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
+  const list=entries.filter(e=>{
+   if(!e.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()))return false;
+   if(sharedOnly){
+    if(e.modelPackage)return !role||e.modelPackage.models.some(part=>part.role===role||part.role==='integrated');
+    return e.isDir||!allowed.length||allowed.includes(e.extName);
+   }
+   return e.isDir||(!is3D||e.name==="config.json")&&(!allowed.length||allowed.includes(e.extName));
+  });
   list.sort((a,b)=>{if(a.isDir!==b.isDir)return a.isDir?-1:1;const order=sortOrder==='desc'?-1:1;if(sortBy==='size'&&!a.isDir)return order*((a.size??0)-(b.size??0));if(sortBy==='lastModified')return order*((a.lastModified??0)-(b.lastModified??0));return order*a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'});});
-  return list.map(e=>({...e,originalPath:e.path,path:referenceKind(e)+'/'+M.reference(library,e.path),...(!e.isDir?{webVideoResourceUrl:M.thumbnailUrl(library,e.path)}:{})}));
- },[entries,library,folder,filter,libraries,currentKind,is3D,props.allowedExtNames,sortBy,sortOrder]);
- const openEntry=file=>{if(busy)return;if(file.sharedLibrary){chooseLibrary(file.sharedLibrary.id);return;}setNotice('');setCopyTargets(false);if(file.isDir){setFolder(file.originalPath);setSelected(null);setFilter('');}else setSelected({...file,path:file.originalPath});};
- const button=(text,action,options={})=>h(Button,{size:'small',disabled:busy,onClick:()=>action(),...options},text),toolbar={display:'flex',gap:4,alignItems:'center',padding:4,flexWrap:'wrap'};
+  return list.map(e=>{
+   const resource=e.modelPackage?.path??e.path;
+   const url=e.modelPackage||!e.isDir?M.thumbnailUrl(library,resource):undefined;
+   const models=e.modelPackage?.models??[];
+   const part=models.find(model=>model.role==='integrated')??models.find(model=>model.role===(role??'body'))??models[0];
+   const model=part?{name:part.name,description:part.description,configUrl:url,role:role??(models.length===1&&part.role!=='integrated'?part.role:undefined)}:undefined;
+   return {...e,originalPath:resource,path:referenceKind(e)+'/'+M.reference(library,resource),webVideoResourceUrl:url,model};
+  });
+ },[entries,library,folder,filter,libraries,currentKind,is3D,props.allowedExtNames,sortBy,sortOrder,sharedOnly,role]);
+ const openEntry=file=>{if(busy||sharedOnly&&props.selectionDisabled)return;if(file.sharedLibrary){chooseLibrary(file.sharedLibrary.id);return;}setNotice('');setCopyTargets(false);if(file.isDir&&!file.modelPackage){setFolder(file.originalPath);setSelected(null);setFilter('');}else setSelected({...file,path:file.originalPath});};
+ const button=(text,action,options={})=>h(Button,{size:'small',disabled:busy||sharedOnly&&props.selectionDisabled,onClick:()=>action(),...options},text),toolbar={display:'flex',gap:4,alignItems:'center',padding:4,flexWrap:'wrap',...(sharedOnly?{flexShrink:0}:{})};
  return h('div',{'data-wvp-shared-assets':true,style:{display:'flex',flexDirection:'column',height:'100%',minHeight:0,overflow:'hidden'}},
-  h('div',{'data-wvp-local-region':true,style:{flex:showShared&&sharedExpanded?'1 1 52%':'1 1 100%',minHeight:100,overflow:'hidden'}},h(WebVideoLocalAssets,{...localProps,webVideoPathChanged:setLocalPath})),
-  showShared&&h('section',{'aria-label':'共享素材','data-wvp-shared-region':true,style:{display:'flex',flexDirection:'column',flex:sharedExpanded?'1 1 48%':'0 0 auto',minHeight:sharedExpanded?150:undefined,overflow:'hidden',background:'rgba(128,88,182,.055)',borderTop:'1px solid var(--border-color,rgba(128,88,182,.16))'}},
-   h('div',{style:toolbar},button(sharedExpanded?'共享素材 ▾':'共享素材 ▸',()=>setExpanded(!sharedExpanded),{appearance:'subtle','aria-expanded':sharedExpanded,'aria-label':sharedExpanded?'收起共享素材':'展开共享素材',style:{fontSize:12,whiteSpace:'nowrap'}}),sharedExpanded&&h(Input,{size:'small',type:'search',value:filter,placeholder:'过滤文件','aria-label':'过滤共享素材',onChange:(_,d)=>setFilter(d.value),style:{flex:1,minWidth:80}}),sharedExpanded&&button(null,()=>{if(folder){setFolder(folder.split('/').slice(0,-1).join('/'));setSelected(null);}else chooseLibrary('');setFilter('');},{icon:h(ArrowLeftIcon$1),title:'上一级','aria-label':'共享素材上一级',disabled:busy||!library}),sharedExpanded&&button(null,()=>run(async()=>{await refresh();setRefreshKey(n=>n+1);} ),{icon:h(ArrowSyncIcon),title:'刷新','aria-label':'刷新共享素材'}),button(null,add,{icon:h(FolderAddIcon),title:'添加共享文件夹','aria-label':'添加共享文件夹'}),sharedExpanded&&button(null,()=>updateViewType(viewType==='grid'?'list':'grid'),{icon:h(viewType==='grid'?GridIcon:ListIcon),title:viewType==='grid'?'列表视图':'网格视图','aria-label':'切换共享素材视图'})),
+  !sharedOnly&&h('div',{'data-wvp-local-region':true,style:{flex:showShared&&sharedExpanded?'1 1 52%':'1 1 100%',minHeight:100,overflow:'hidden'}},h(WebVideoLocalAssets,{...localProps,webVideoPathChanged:setLocalPath})),
+  showShared&&h('section',{'aria-label':'共享素材','data-wvp-shared-region':true,style:{display:'flex',flexDirection:'column',flex:sharedOnly?'1 1 100%':sharedExpanded?'1 1 48%':'0 0 auto',minHeight:sharedOnly?0:sharedExpanded?150:undefined,overflow:'hidden',background:'rgba(128,88,182,.055)',borderTop:'1px solid var(--border-color,rgba(128,88,182,.16))'}},
+   h('div',{style:toolbar},!sharedOnly&&button(sharedExpanded?'共享素材 ▾':'共享素材 ▸',()=>setExpanded(!sharedExpanded),{appearance:'subtle','aria-expanded':sharedExpanded,'aria-label':sharedExpanded?'收起共享素材':'展开共享素材',style:{fontSize:12,whiteSpace:'nowrap'}}),sharedExpanded&&h(Input,{size:'small',type:'search',value:filter,placeholder:'过滤文件','aria-label':'过滤共享素材',onChange:(_,d)=>setFilter(d.value),style:{flex:1,minWidth:80}}),sharedExpanded&&button(null,()=>{if(folder){setFolder(folder.split('/').slice(0,-1).join('/'));setSelected(null);}else chooseLibrary('');setFilter('');},{icon:h(ArrowLeftIcon$1),title:'上一级','aria-label':'共享素材上一级',disabled:busy||!library}),sharedExpanded&&button(null,()=>run(async()=>{await refresh();setRefreshKey(n=>n+1);} ),{icon:h(ArrowSyncIcon),title:'刷新','aria-label':'刷新共享素材'}),button(null,add,{icon:h(FolderAddIcon),title:'添加共享文件夹','aria-label':'添加共享文件夹'}),sharedExpanded&&button(null,()=>updateViewType(viewType==='grid'?'list':'grid'),{icon:h(viewType==='grid'?GridIcon:ListIcon),title:viewType==='grid'?'列表视图':'网格视图','aria-label':'切换共享素材视图'})),
    sharedExpanded&&active&&h('div',{style:{...toolbar,paddingTop:0,fontSize:12,color:'var(--text-weak)'}},h('span',{title:active.root+(folder?'/'+folder:''),style:{flex:1,minWidth:0,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},active.name+(folder?' / '+folder:'')),h('span',null,'只读'),button('来源',()=>setManage(!manage),{appearance:'subtle'})),
    sharedExpanded&&manage&&active&&h('div',{style:{...toolbar,fontSize:12}},h('span',{style:{flex:'1 1 100%',overflowWrap:'anywhere'}},active.root),button('更换位置',()=>run(async()=>{const picked=await M.request('/api/shared/dialog',{initial:active.root});if(picked.canceled)return;await M.request('/api/shared/relocate',{id:library,path:picked.path});await refresh();setRefreshKey(n=>n+1);})),button('转换本项目旧引用',()=>run(async()=>{const result=await M.request('/api/shared/upgrade-project',{project});setNotice(result.changed?'已转换 '+result.changed+' 个文件，已保留备份':'本项目引用已是当前格式');})),button('取消登记',()=>run(async()=>{if(!window.confirm('取消登记“'+active.name+'”？已引用的素材将暂时不可用。'))return;await M.request('/api/shared/remove',{id:library});chooseLibrary('');setExpanded(null);await refresh();}))),
-   sharedExpanded&&h(WebVideoSharedFileList,{rootPath:props.rootPath,entries:displayEntries,selected,onOpen:openEntry,onCopy:file=>{if(busy)return;const entry={...file,path:file.originalPath};setSelected(entry);copy(entry,currentKind);}}),
+   sharedExpanded&&h(WebVideoSharedFileList,{rootPath:props.rootPath,entries:displayEntries,selected,loadModelPreview,onOpen:openEntry,onCopy:file=>{if(busy)return;const entry={...file,path:file.originalPath};setSelected(entry);copy(entry,currentKind);}}),
    sharedExpanded&&!displayEntries.length&&!busy&&h('div',{style:{padding:'4px 8px',fontSize:12,color:'var(--text-weak)'}},library?'当前文件夹为空':'添加共享文件夹'),
-   sharedExpanded&&modelPreview?.preview&&h('img',{src:modelPreview.preview,alt:modelPreview.name,style:{maxHeight:110,objectFit:'contain'}}),
-   sharedExpanded&&selected&&h('div',{style:toolbar},button('预览',preview),props.isProtected&&button('引用共享素材',()=>run(()=>choose(selected)),{appearance:'primary'}),!props.isProtected&&button('复制引用路径',()=>run(async()=>{await navigator.clipboard.writeText(await M.resolve(referenceKind(selected),library,selected));setNotice('引用路径已复制');})),button('复制到当前项目',()=>copy()),selected.localReference&&button(props.isProtected?'选择副本':'打开副本',()=>run(()=>props.fileFunction?.open?.({...selected,path:selected.localKind+'/'+selected.localReference,name:selected.localReference},'asset')))),
+   sharedExpanded&&selected&&h('div',{style:toolbar},button('预览',preview),props.isProtected&&button('引用共享素材',()=>run(()=>choose(selected)),{appearance:'primary'}),!props.isProtected&&button('复制引用路径',()=>run(async()=>{await navigator.clipboard.writeText(await M.resolve(referenceKind(selected),library,selected));setNotice('引用路径已复制');})),button('复制到当前项目',()=>copy()),selected.localReference&&button(props.isProtected?'选择副本':'打开副本',()=>run(()=>props.fileFunction?.open?.({...selected,path:sharedOnly?selected.localReference:selected.localKind+'/'+selected.localReference,name:selected.localReference,isDir:false,...(sharedOnly?{webVideoFigureType:selected.localKind==='3d/figure'?'3d':'2d'}:{})},'asset')))),
    sharedExpanded&&copyTargets&&selected&&h('div',{style:toolbar},h('span',{style:{fontSize:12}},'复制到'),Object.entries(M.kinds).map(([kind,label])=>button(label,()=>copy(selected,kind),{key:kind}))),
    notice&&h('div',{role:'status',style:{padding:'4px 8px',fontSize:12}},notice),error&&h('div',{role:'alert',style:{padding:'4px 8px',fontSize:12,color:'var(--danger,#b42318)',overflowWrap:'anywhere'}},h('div',null,error.summary),h('div',{style:{color:'var(--text-weak)',marginTop:4}},error.nextStep),h('details',null,h('summary',null,'技术详情'),h('pre',{style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:'20vh',overflowY:'auto'}},error.technical))),busy&&h('div',{role:'status',style:{padding:'4px 8px',fontSize:12,color:'var(--text-weak)'}},'正在处理…')));
 }

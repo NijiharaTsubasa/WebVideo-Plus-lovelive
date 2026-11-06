@@ -24,11 +24,12 @@ namespace NativeVideo {
    if(modules.Contains("sharedAssets")){
     source=Once(source,"function Assets({","function WebVideoLocalAssets({");bool gltfPicker=source.Contains("function GltfFigurePicker(");
     foreach(var patch in J.A(J.Read(Path.Combine(Files.Root,"product-ui/shared-assets-patches.json")))){
-     if(gltfPicker&&J.S(patch,"scopeStart")=="function ChangeFigure("&&new[]{"WebVideoSharedMaterials.useFigureMetadata","WebVideoModelOptions","WebVideoFigureAddress"}.Any(J.S(patch,"replace").Contains))continue;
+     if(gltfPicker&&J.S(patch,"scopeStart")=="function ChangeFigure("&&new[]{"WebVideoSharedMaterials.useFigureMetadata","WebVideoModelOptions"}.Any(J.S(patch,"replace").Contains))continue;
      if(gltfPicker&&J.S(patch,"scopeStart")=="function WebVideoLocalAssets({")continue;
      if(gltfPicker&&J.S(patch,"scopeStart")=="function ChooseFile(")continue;
      source=RegexOnceInScope(source,J.S(patch,"scopeStart"),J.S(patch,"scopeEnd"),J.S(patch,"regex",Regex.Escape(J.S(patch,"find"))),J.S(patch,"replace"),J.S(patch,"mygoRegex"),J.S(patch,"mygoReplace"));}
     if(gltfPicker){
+     bool sharedFigureSelection=source.Contains("__webgalLoveLiveSharedNamedOptions");
      source=RegexOnceInScope(source,"function WebVideoLocalAssets({","function FileUploader(",
       @"(?<options>chooseModelDirectory:[\w$]+=!1)\}\)\{","${options},webVideoPathChanged:__wvpPathChanged}){");
      source=RegexOnceInScope(source,"function WebVideoLocalAssets({","function FileUploader(",
@@ -36,14 +37,28 @@ namespace NativeVideo {
       "${state},__wvpNotifyPath=reactExports.useEffect(()=>{__wvpPathChanged?.(${path}.value)},[${path}.value]),");
      source=RegexOnceInScope(source,"function ChooseFile(","var commandType",@",!(?<validate>[\w$]+)\((?<file>[\w$]+)\.path\)\)return;",",!WebVideoSharedMaterials.isResourceUrl(${file}.path)&&!${validate}(${file}.path))return;");
      source=RegexOnceInScope(source,"function GltfFigurePicker(","function ChangeFigure(",@"axios\$1\.post\(""/api/manageGame/selectGltfModel"",","WebVideoSelectGltfModel(");
+     source=RegexOnceInScope(source,"function GltfFigurePicker(","function ChangeFigure(",
+      @"jsxRuntimeExports\.jsx\(ChooseFile,","jsxRuntimeExports.jsx(WebVideoLoveLiveFigureChooser,");
+     if(!sharedFigureSelection){
+     source=RegexOnceInScope(source,"function GltfFigurePicker(","function ChangeFigure(",
+      @"function (?<commit>[\w$]+)\((?<path>[\w$]+)\)\{rememberFigureMode\((?<mode>[\w$]+)\)",
+      "function ${commit}(${path},__wvpFigure3d=${mode}){rememberFigureMode(__wvpFigure3d)");
+     source=RegexOnceInScope(source,"function GltfFigurePicker(","function ChangeFigure(",
+      @"(?<prefix>\[(?<mode>[\w$]+),(?<setMode>[\w$]+)\]=reactExports\.useState\(\(\)=>[\w$]+&&preferredFigure3D\([^)]+\)\)[\s\S]*?onChange:async (?<file>[\w$]+)=>\{var [\w$,]+;if\(!\k<file>\|\|[\w$]+\.current\)return!1;)if\(!\k<mode>\)return (?<commit>[\w$]+)\(\k<file>\.name\),!0;",
+      "${prefix}const __wvpSharedType=${file}.webVideoFigureType;if(!(__wvpSharedType?__wvpSharedType===\"3d\":${mode}))return ${commit}(${file}.name,!1),!0;if(__wvpSharedType===\"3d\")${setMode}(!0);");
+     source=RegexOnceInScope(source,"function GltfFigurePicker(","function ChangeFigure(",
+      @"(?<prefix>\.role===""integrated""\)return [\w$]+\([\w$]+)\),!0;","${prefix},!0),!0;");
+     }
      source=RegexOnceInScope(source,"function GltfFigurePicker(","function ChangeFigure(",@"axios\$1\.get\((?<local>\`/games/\$\{encodeURIComponent\([\w$]+\)\}/game/3d/figure/\$\{(?<path>[\w$]+)\}\`)\)","axios$$1.get(WebVideoSharedMaterials.isResourceUrl(${path})?${path}:${local})");
      source=RegexOnceInScope(source,"function ChangeFigure(","function Bgm(",@"axios\$1\.get\((?<local>\`/games/\$\{encodeURIComponent\([\w$]+\)\}/game/3d/figure/\$\{(?<path>[\w$]+)\}\`),","axios$$1.get(WebVideoSharedMaterials.isResourceUrl(${path})?${path}:${local},");
+     if(!sharedFigureSelection){
      source=RegexOnceInScope(source,"function ChangeFigure(","function Bgm(",
       @"(?<picker>jsxRuntimeExports\.jsx\(SearchableCascader,\{optionList:[\w$]+,optionDescriptions:(?<enabled>[\w$]+)\?[^,]+,value:[\w$]+\.value,onOpen:[^,]+,onValueChange:(?<change>[\w$]+=>\{[^}]+\})\}\))",
       @"jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment,{children:[${picker},${enabled}&&jsxRuntimeExports.jsx(WebVideoSharedNamedPicker,{kind:""motion"",onValueChange:${change}})]})");
      source=RegexOnceInScope(source,"function ChangeFigure(","function Bgm(",
       @"(?<picker>jsxRuntimeExports\.jsx\(GltfExpressionPicker,\{native:[\w$]+,live2d:[\w$]+,supportsLive2D:(?<enabled>[\w$]+),value:[\w$]+\.value,onOpen:[^,]+,onValueChange:(?<change>[\w$]+=>\{[^}]+\})\}\))",
       @"jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment,{children:[${picker},${enabled}&&jsxRuntimeExports.jsx(WebVideoSharedNamedPicker,{kind:""expression"",onValueChange:${change}})]})");
+     }
      int figureStart=source.IndexOf("function ChangeFigure(",StringComparison.Ordinal);
      int figureEnd=source.IndexOf("function Bgm(",figureStart,StringComparison.Ordinal);
      string figure=source.Substring(figureStart,figureEnd-figureStart);

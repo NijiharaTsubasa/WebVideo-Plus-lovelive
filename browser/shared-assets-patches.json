@@ -76,8 +76,8 @@
   {
     "scopeStart": "function ChangeFigure(",
     "scopeEnd": "function Bgm(",
-    "regex": "(?<prefix>function ChangeFigure\\([\\s\\S]*?)jsxRuntimeExports\\.jsx\\(AssetPreview,\\{basePath:\"figure\",file:(?<reference>[A-Za-z_$][\\w$]*)\\.value\\}\\),jsxRuntimeExports\\.jsx\\(\"span\",\\{children:\\k<reference>\\.value\\}\\)",
-    "replace": "${prefix}jsxRuntimeExports.jsx(AssetPreview,{basePath:\"figure\",file:${reference}.value}),jsxRuntimeExports.jsx(WebVideoFigureAddress,{value:${reference}.value})"
+    "regex": "(?<prefix>function ChangeFigure\\([\\s\\S]*?className:[\\w$]+\\.filePreviewRow),children:\\[jsxRuntimeExports\\.jsx\\(AssetPreview,\\{basePath:\"figure\",file:(?<reference>[A-Za-z_$][\\w$]*)\\.value\\}\\),jsxRuntimeExports\\.jsx\\(\"span\",\\{children:\\k<reference>\\.value\\}\\)",
+    "replace": "${prefix},style:{display:\"flex\",width:\"100%\",minWidth:0},children:[jsxRuntimeExports.jsx(AssetPreview,{basePath:\"figure\",file:${reference}.value}),jsxRuntimeExports.jsx(WebVideoFigureAddress,{value:${reference}.value})"
   },
   {
     "scopeStart": "function ChangeBg(",

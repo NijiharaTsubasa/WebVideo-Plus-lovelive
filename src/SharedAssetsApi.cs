@@ -15,7 +15,7 @@ namespace NativeVideo {
    if(r.Path=="/api/shared/remove"){SharedStore.Remove(J.S(data,"id"));return HttpResponse.Data(J.O("ok",true));}
    if(r.Path=="/api/shared/upgrade-project")return HttpResponse.Data(await Task.Run(()=>UpgradeSharedProject(data)));
    if(r.Path=="/api/shared/export")return HttpResponse.Data(await SharedExport(data));
-   if(r.Path=="/api/shared/list")return HttpResponse.Data(SharedStore.List(J.S(data,"id"),J.S(data,"path")));
+   if(r.Path=="/api/shared/list")return HttpResponse.Data(SharedStore.List(J.S(data,"id"),J.S(data,"path"),J.B(data,"figurePackages")));
    if(r.Path=="/api/shared/gltf-named"){
     sharedResources.Start();
     if(sharedResources.Error!=null)throw new IOException(sharedResources.Error);

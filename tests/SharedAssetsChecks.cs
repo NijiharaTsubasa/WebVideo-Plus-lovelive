@@ -3,6 +3,47 @@ public static class SharedAssetsChecks {
  static int checks;static void Check(bool value,string message){checks++;if(!value)throw new Exception(message);}
  static void Fails(Action action,string message){bool failed=false;try{action();}catch(IOException){failed=true;}Check(failed,message);}
  static void Write(string file,string text){Directory.CreateDirectory(Path.GetDirectoryName(file));File.WriteAllText(file,text);}
+ static void WriteGlb(string file){
+  var json=System.Text.Encoding.UTF8.GetBytes("{\"asset\":{\"version\":\"2.0\"}} ");
+  using(var writer=new BinaryWriter(File.Create(file))){writer.Write(0x46546c67u);writer.Write(2u);writer.Write(20+json.Length);writer.Write(json.Length);writer.Write(0x4e4f534au);writer.Write(json);}
+ }
+ static void CheckLoveLivePackages(string root,SharedAssets store,string library,string work){
+  var project=Path.Combine(root,"games/LoveLive");
+  Write(Path.Combine(project,"webgal-engine.json"),"{\"id\":\"webgal-lovelive.lovelive\"}");
+  Write(Path.Combine(project,"index.html"),"<script type=\"module\" src=\"./assets/index.js\"></script>");
+  Write(Path.Combine(project,"assets/index.js"),"globalThis.__webgalOfflineExportHost={};");
+  var pack=Path.Combine(library,"组合/角色");
+  Write(Path.Combine(pack,"config.json"),"{\"components\":[{\"type\":\"model\",\"role\":\"head\",\"name\":\"头部\",\"model\":\"head.glb\"},{\"type\":\"model\",\"role\":\"body\",\"name\":\"身体\",\"model\":\"body.glb\",\"defaultMotion\":\"idle.motionbin\"}]}");
+  WriteGlb(Path.Combine(pack,"head.glb"));WriteGlb(Path.Combine(pack,"body.glb"));
+  Write(Path.Combine(library,"motion/idle.motionbin"),"motion fixture");
+  Write(Path.Combine(library,"3d/mtn_exp/anon/angry01.exp.json"),"{}");
+  Write(Path.Combine(library,"组合/Live2D/config.json"),"{\"FileReferences\":{\"Moc\":\"model.moc3\"}}");
+  var id=J.S(store.Add(library,"all","混合库"),"id");
+  var named=J.A(store.GltfNamedResources()).Where(e=>J.S(e,"libraryId")==id).ToArray();
+  var motion=named.Single(e=>J.S(e,"type")=="motion");
+  var expression=named.Single(e=>J.S(e,"type")=="expression");
+  Check(J.S(motion,"relativePath")=="idle.motionbin"&&J.S(motion,"url").EndsWith("/motion/idle.motionbin"),"motion label path is separate from the full reference");
+  Check(J.S(expression,"libraryName")=="混合库"&&J.S(expression,"relativePath")=="anon/angry01.exp.json"&&J.S(expression,"url").EndsWith("/3d/mtn_exp/anon/angry01.exp.json"),"expression grouping preserves the original reference");
+  var entries=J.A(J.Get(store.List(id,"组合",true),"entries"));
+  var model=J.Get(entries.Single(e=>J.S(e,"name")=="角色"),"modelPackage");
+  Check(J.S(model,"path")=="组合/角色/config.json"&&J.A(J.Get(model,"models")).Count==2,"LoveLive picker lists a composed model as a package");
+  Check(J.Get(entries.Single(e=>J.S(e,"name")=="Live2D"),"modelPackage")==null,"Live2D config.json remains a regular file");
+  Check(J.A(J.Get(store.List(id,"组合"),"entries")).All(e=>J.Get(e,"modelPackage")==null),"regular shared listing remains unchanged");
+  var adapter=EngineAdapter.Select(J.O("project",project));
+  var copied=store.Copy(Guid.NewGuid().ToString(),project,"figure","__shared/"+id+"/组合/角色/config.json",null,work,adapter);
+  var relative=J.S(copied,"reference");
+  Check(relative=="角色/组合/角色/config.json"&&J.S(copied,"kind")=="3d/figure","copy uses the model directory name at the 3D figure root");
+  var destination=Path.GetDirectoryName(Path.Combine(project,"game/3d/figure",relative));
+  Check(File.Exists(Path.Combine(destination,"head.glb"))&&File.Exists(Path.Combine(destination,"body.glb")),"both model components are copied");
+  Check(File.Exists(Path.Combine(project,"game/3d/figure/角色/motion/idle.motionbin")),"default motion follows the model package");
+  foreach(var role in new[]{"integrated","head","body"}){
+   var folder=Path.Combine(library,"组合",role);
+   Write(Path.Combine(folder,"config.json"),J.Text(J.O("components",new[]{J.O("type","model","role",role,"model","mesh.glb")})));
+   WriteGlb(Path.Combine(folder,"mesh.glb"));
+   var copy=store.Copy(Guid.NewGuid().ToString(),project,"figure","__shared/"+id+"/组合/"+role+"/config.json",null,work,adapter);
+   Check(J.S(copy,"name")==role&&File.Exists(Path.Combine(project,"game/3d/figure",role,"组合",role,"mesh.glb")),role+" model package is copied");
+  }
+ }
  public static int Main(string[] args){try{return Run(args);}catch(Exception e){Console.Error.WriteLine(e.GetType().FullName+": "+e.Message);return 1;}}
  static int Run(string[] args){string root=Path.GetFullPath(args[0]),project=Path.Combine(root,"games/工程 一"),second=Path.Combine(root,"games/工程 二"),library=Path.Combine(root,"共享 模型"),registry=Path.Combine(root,"state/shared.json"),work=Path.Combine(root,"work");Directory.CreateDirectory(project);Directory.CreateDirectory(second);Directory.CreateDirectory(work);
   Write(Path.Combine(library,"人物/模型 空格.model3.json"),"{\"FileReferences\":{\"Moc\":\"model.moc3\",\"Textures\":[\"../公共/贴图.png\"],\"Physics\":\"physics.json\",\"Motions\":{\"Idle\":[{\"File\":\"motions/idle.motion3.json\"}]}}}");Write(Path.Combine(library,"人物/model.moc3"),"moc fixture");Write(Path.Combine(library,"公共/贴图.png"),"texture version one");Write(Path.Combine(library,"人物/physics.json"),"{}");Write(Path.Combine(library,"人物/motions/idle.motion3.json"),"{}");Write(Path.Combine(library,"branch.png"),"branch");
@@ -21,6 +62,7 @@ public static class SharedAssetsChecks {
   var configOnly=new ProjectAssets(project,Path.Combine(root,"http-config-only"),adapter.Source,"",null,adapter){Shared=store};configOnly.Skeleton();configOnly.Shared=configOnly.Shared.ForHttpSource("");configOnly.CollectSharedConfig(configSource);var configManifest=configOnly.CopyShared();string preparedConfig=File.ReadAllText(Path.Combine(configOnly.Root,"game/config.txt"));Check(!preparedConfig.Contains(store.HttpPrefix)&&preparedConfig.Contains(imageReference),"HTTP config is localized in prepared project");Check(J.A(J.Get(configManifest,"files")).Count==2&&File.Exists(Path.Combine(configOnly.Root,"game/background",imageReference)),"config-only shared dependencies are copied across old category registration");Check(File.ReadAllText(Path.Combine(project,"game/config.txt"))==configSource,"config localization leaves source unchanged");Check(preparedConfig.Contains("https://example.invalid/logo.png"),"unrelated external config URL remains unchanged");
   var frozen=SharedAssets.FromSnapshot(store.Export());store.Remove(id);Check(File.Exists(frozen.Resolve("figure",reference)),"queued registry snapshot survives deregistration");Fails(()=>store.Resolve("figure",reference),"missing registry reports failure");Directory.Move(library,library+" moved");Fails(()=>frozen.Resolve("figure",reference),"missing shared source reports failure");Check(File.Exists(Path.Combine(snapshot,"game/figure/__shared",id,"人物/模型 空格.model3.json")),"existing snapshot survives source removal");var portable=new ProjectAssets(snapshot,Path.Combine(root,"portable-rerender"),adapter.Source,"",null,adapter){Shared=SharedAssets.FromSnapshot(J.O())};Check(File.Exists(portable.Resolve("figure",reference)),"materialized project resolves without registration");var literal=new ProjectAssets(snapshot,Path.Combine(root,"portable-literal"),adapter.Source,"",null,adapter){Shared=SharedAssets.FromSnapshot(J.O())};literal.CollectSharedScene(J.O("sentenceList",new[]{J.O("commandRaw","setVar","content","model='"+reference+"'")}));literal.CopyShared();Check(File.Exists(Path.Combine(literal.Root,"game/figure",reference)),"materialized literal resolves without registration");Check(Directory.GetFiles(Path.Combine(literal.Root,"game/figure/__shared",id),"*",SearchOption.AllDirectories).Length==5,"materialized literal retains full model closure");Check(Files.Hash(Path.Combine(literal.Root,"game/figure/__shared",id,"公共/贴图.png"))==Files.Hash(Path.Combine(snapshot,"game/figure/__shared",id,"公共/贴图.png")),"materialized literal retains dependency bytes");
   var absent=new ProjectAssets(snapshot,Path.Combine(root,"portable-absent"),adapter.Source,"",null,adapter){Shared=SharedAssets.FromSnapshot(J.O())};absent.CollectSharedScene(J.O("sentenceList",new[]{J.O("commandRaw","setVar","content","model='__shared/absent/missing.model3.json'")}));Fails(()=>absent.CopyShared(),"missing literal source and local copy still fail");
+  CheckLoveLivePackages(root,store,Path.Combine(root,"混合库"),work);
   Check(!Directory.EnumerateDirectories(work).Any(),"copy staging cleaned");Console.WriteLine("PASS "+checks+" shared asset production checks");return 0;
  }
 }
