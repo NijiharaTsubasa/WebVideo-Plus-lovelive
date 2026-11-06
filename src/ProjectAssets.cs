@@ -9,6 +9,75 @@ namespace NativeVideo {
    return Path.GetFileName(file).Equals("config.json",StringComparison.OrdinalIgnoreCase)
     && J.A(J.Get(J.TryRead(file),"components")).Any(component=>J.S(component,"type")=="model");
   }
+  bool collectLocalGltf;
+  readonly HashSet<string> localGltfComponents=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+  void CopyProjectResource(string file){
+   if(!Files.Within(Project,file))throw new IOException("3D 资源路径超出工程目录");
+   copies[Files.Under(Root,file.Substring(Project.TrimEnd('\\','/').Length+1))]=file;
+  }
+
+  void CopyGltfTree(string folder){
+   if(Directory.Exists(folder))foreach(var file in Directory.EnumerateFiles(folder,"*",SearchOption.AllDirectories))CopyProjectResource(file);
+  }
+
+  void CollectLocalGltfNamed(string kind,string name,string libraryRoot=null){
+   if(string.IsNullOrEmpty(name)||External(name)||(kind=="expression"&&name.StartsWith("3d:",StringComparison.Ordinal)))return;
+   var binary=name.EndsWith(".motionbin",StringComparison.Ordinal);
+   var materialized=name.StartsWith(SharedAssets.Prefix,StringComparison.Ordinal);
+   string[] paths;
+   if(kind=="expression")paths=new[]{"mtn_exp/"+name+(materialized&&name.EndsWith(".exp.json",StringComparison.Ordinal)?"":".exp.json")};
+   else if(binary)paths=new[]{"motion/"+name};
+   else if(materialized&&name.EndsWith(".mtn",StringComparison.Ordinal))paths=new[]{"mtn_exp/"+name};
+   else paths=new[]{"mtn_exp/"+name+".mtn","motion/"+name+".motionbin"};
+   var root=Path.Combine(Project,"game/3d");
+   var candidates=libraryRoot==null?paths:paths.SelectMany(path=>new[]{libraryRoot+"/3d/"+path,libraryRoot+"/"+path}).Concat(paths);
+   foreach(var path in candidates){
+    var candidate=Path.Combine(root,PhysicalName(path));
+    if(!File.Exists(candidate))continue;
+    var file=Files.Full(candidate);
+    if(!Files.Within(root,file))continue;
+    CopyProjectResource(file);
+    break;
+   }
+  }
+
+  string LocalGltfFile(string parent,string reference){
+   if(string.IsNullOrEmpty(reference)||External(reference)||reference.StartsWith("data:",StringComparison.OrdinalIgnoreCase))return null;
+   var path=PhysicalName(reference);
+   var file=path.StartsWith("/",StringComparison.Ordinal)
+    ?Files.Under(Project,path.TrimStart('/')):Files.Full(Path.Combine(Path.GetDirectoryName(parent),path));
+   return Files.Within(Path.Combine(Project,"game/3d"),file)?file:null;
+  }
+
+  static object ReadGlbJson(string file){
+   using(var reader=new BinaryReader(File.OpenRead(file))){
+    if(reader.ReadUInt32()!=0x46546c67||reader.ReadUInt32()!=2)throw new IOException("模型不是 GLB 2.0");
+    reader.ReadUInt32();var length=reader.ReadInt32();
+    if(reader.ReadUInt32()!=0x4e4f534a||length<0||length>reader.BaseStream.Length-reader.BaseStream.Position)throw new IOException("GLB JSON 数据无效");
+    return J.Parse(System.Text.Encoding.UTF8.GetString(reader.ReadBytes(length)));
+   }
+  }
+
+  void CollectLocalGltf(string config,string role){
+   if(!collectLocalGltf||!localGltfComponents.Add(config+"|"+role))return;
+   CopyProjectResource(config);
+   var relativeConfig=config.Substring(Path.Combine(Project,"game/3d").Length+1).Replace('\\','/');
+   var sharedLibrary=Regex.Match(relativeConfig,@"^(figure/__shared/[^/]+)/");
+   var libraryRoot=sharedLibrary.Success?sharedLibrary.Groups[1].Value:null;
+   foreach(var component in J.A(J.Get(J.Read(config),"components")).Where(c=>J.S(c,"type")=="model"&&(role==null||J.S(c,"role")==role))){
+    if(J.S(component,"role")!="head"){
+     var motion=J.S(component,"defaultMotion");
+     if(motion.StartsWith("./",StringComparison.Ordinal)||motion.StartsWith("../",StringComparison.Ordinal)){
+      var relative=LocalGltfFile(config,motion);
+      if(File.Exists(relative))CopyProjectResource(relative);
+      else CollectLocalGltfNamed("motion",motion);
+     }else CollectLocalGltfNamed("motion",motion,libraryRoot);
+    }
+    var model=LocalGltfFile(config,J.S(component,"model"));
+    if(File.Exists(model))CopyProjectResource(model);
+   }
+  }
   Dictionary<string,string[]> gltfRuntime;
   Dictionary<string,string[]> GltfRuntime(){
    if(gltfRuntime!=null)return gltfRuntime;
@@ -52,7 +121,7 @@ namespace NativeVideo {
        var stagedConfig=Files.Under(Path.Combine(Root,"game/3d/figure"),reference);
        var stagedMotion=Files.Under(Path.Combine(Root,"game/3d/figure"),motion);
        copiedDefaultMotions[stagedConfig]=stagedMotion;
-      }
+      }else if(!relative&&collectLocalGltf)CollectLocalGltfNamed("motion",defaultMotion);
      }
      var profile=J.S(component,"renderProfile");
      if(profile!="")required.Add("render-profile:"+profile);
@@ -62,17 +131,10 @@ namespace NativeVideo {
      collect(config,model);
      var glb=Files.Full(Path.Combine(Path.GetDirectoryName(config),PhysicalName(model)));
      if(!dependencies.Contains(glb))continue;
-     using(var reader=new BinaryReader(File.OpenRead(glb))){
-      if(reader.ReadUInt32()!=0x46546c67||reader.ReadUInt32()!=2)throw new IOException("模型不是 GLB 2.0");
-      reader.ReadUInt32();var length=reader.ReadInt32();
-      if(reader.ReadUInt32()!=0x4e4f534a||length<0||length>reader.BaseStream.Length-reader.BaseStream.Position)throw new IOException("GLB JSON 数据无效");
-      var document=J.Parse(System.Text.Encoding.UTF8.GetString(reader.ReadBytes(length)));
-      foreach(var material in J.A(J.Get(document,"materials"))){
-       var shader=J.S(J.Get(material,"extras"),"shader");
-       if(shader!="")required.Add("shader:"+shader);
-      }
-      foreach(var key in new[]{"images","buffers"})
-       foreach(var value in J.A(J.Get(document,key)))collect(glb,J.S(value,"uri"));
+     var document=ReadGlbJson(glb);
+     foreach(var material in J.A(J.Get(document,"materials"))){
+      var shader=J.S(J.Get(material,"extras"),"shader");
+      if(shader!="")required.Add("shader:"+shader);
      }
     }
     foreach(var dependency in required){
@@ -223,18 +285,20 @@ namespace NativeVideo {
    if(External(name)){RequireModelLibraries(name,null,modelReference);AddWarning("external-resource",line,name,"外链素材不会写入本地快照；导出结果依赖当前网络、CORS 与远端内容是否变化。");return;}
    if(Adapter.IsLoveLive&&kind=="figure"&&!External(name)) {
     string[] parts=Regex.Split(name,@"(?<=config\.json)\+",RegexOptions.IgnoreCase)
-     .Select(part=>Clean("figure",Clean("3d/figure",part))).ToArray();
+     .Select(part=>PhysicalName(Clean("figure",Clean("3d/figure",part)))).ToArray();
     string figureRoot=Path.Combine(Project,"game/3d/figure");
-    if(parts.All(part=>part.EndsWith("/config.json",StringComparison.OrdinalIgnoreCase))){
+    if(parts.All(part=>Path.GetFileName(part).Equals("config.json",StringComparison.OrdinalIgnoreCase))){
      try{
       bool found=true;
       for(int index=0;index<parts.Length;index++){
-       var part=PhysicalName(parts[index]);
-       if(File.Exists(Files.Under(figureRoot,part)))continue;
+       var part=parts[index];
+       var role=parts.Length==2?(index==0?"head":"body"):null;
+       var local=Files.Under(figureRoot,part);
+       if(File.Exists(local)){CollectLocalGltf(local,role);continue;}
        if(Shared!=null&&part.StartsWith(SharedAssets.Prefix,StringComparison.Ordinal)){
         var config=Shared.Resolve(kind,part);
-        if(IsGltfPackage(config))CollectSharedGltf(part,config,parts.Length==2?(index==0?"head":"body"):null);else found=false;
-       }else if(!File.Exists(Files.Under(figureRoot,part)))found=false;
+        if(IsGltfPackage(config))CollectSharedGltf(part,config,role);else found=false;
+       }else found=false;
       }
       if(found)return;
      }catch(Exception e){Add("missing",line,name,e.Message,action);return;}
@@ -257,7 +321,8 @@ namespace NativeVideo {
    if(Adapter.IsLoveLive&&Shared!=null&&SharedAssets.GltfNamedKind(value)!=null){
     var kind=SharedAssets.GltfNamedKind(value);
     var destination=Files.Under(Path.Combine(Root,"game/3d",kind),PhysicalName(value));
-    if(LocalFile("3d/"+kind,PhysicalName(value))!=null)return;
+    var local=LocalFile("3d/"+kind,PhysicalName(value));
+    if(local!=null){if(collectLocalGltf&&Files.Within(Project,local))CopyProjectResource(local);return;}
     try{
      var file=Shared.ResourceFile(PhysicalName(value));
      if(!sharedScanHashes.ContainsKey(file))sharedScanHashes[file]=Files.Hash(file);
@@ -321,11 +386,8 @@ namespace NativeVideo {
    return string.Join("\n",lines);
   }
   public object Scan(object parsed,bool ignoreStageBackground=false,bool timingOnly=false){
-   if(Adapter.IsLoveLive&&!timingOnly) {
-    var tree=Path.Combine(Project,"game/3d");
-    if(Directory.Exists(tree))foreach(var file in Directory.EnumerateFiles(tree,"*",SearchOption.AllDirectories))
-     copies[Files.Under(Path.Combine(Root,"game/3d"),file.Substring(tree.Length+1))]=file;
-   }
+   collectLocalGltf=Adapter.IsLoveLive&&!timingOnly;
+   bool dynamicGltf=false;
    Parsed=parsed;
    var lines=Regex.Split(Script,"\r?\n");
    var sentences=J.A(J.Get(parsed,"sentenceList"));
@@ -344,6 +406,15 @@ namespace NativeVideo {
     var p=Params(s);
     bool timingFigure=(cmd=="changeFigure"||cmd=="miniAvatar")&&timingFigures.Count>0&&timingFigures.Contains(PhysicalName(Clean("figure",J.S(s,"content"))));
     if(!timingFigure)CollectSharedNamedArgs(p);
+    if(collectLocalGltf){
+     if(cmd=="changeFigure"){
+      string motion=J.S(p,"motion"),expression=J.S(p,"expression");
+      dynamicGltf|=RuntimeVariable(J.S(s,"content"))||RuntimeVariable(motion)||RuntimeVariable(expression);
+      if(!RuntimeVariable(motion))CollectLocalGltfNamed("motion",motion);
+      if(!RuntimeVariable(expression))CollectLocalGltfNamed("expression",expression);
+     }
+     dynamicGltf|=!known.Contains(cmd);
+    }
     if(!known.Contains(cmd)){RequireModelLibraries(J.S(s,"content"),null,true);AddWarning("custom-command",line,cmd,"检测到非标准或深度定制引擎指令；WebVideo+ 会按当前运行时执行，但不保证其隐藏状态能够跨 Worker 恢复。");}
     if(RuntimeVariable(J.S(s,"content"))||p.Values.OfType<string>().Any(RuntimeVariable))AddWarning("runtime-variable",line,cmd,"检测到运行时变量插值。导出使用独立临时运行环境，不保证继承玩家存档中的变量值。");
     bool singleLineHint=SingleLineHint(cmd,s,p),convertibleSingleChoose=ConvertibleSingleChoose(cmd,s,p);
@@ -365,6 +436,7 @@ namespace NativeVideo {
     if(new[]{"setTransition","changeBg","changeFigure"}.Contains(cmd))foreach(var key in new[]{"enter","exit"})if(p.ContainsKey(key))Ref("animation",J.S(p,key)+".json",line,J.O("line",line,"startLine",line,"endLine",endLine,"kind","remove-argument","key",key));
     if(i%10==0)Report(J.O("phase","scanning","scannedLines",line,"totalLines",lines.Length,"checkedFiles",checkedFiles.Count));
    }
+   if(collectLocalGltf)CopyGltfTree(Path.Combine(Project,dynamicGltf?"game/3d":"game/3d/runtime"));
    var template=Directory.Exists(Path.Combine(Project,"game/template"))?Path.Combine(Project,"game/template"):Path.Combine(Engine,"game/template");
    if(Directory.Exists(template))foreach(var file in Directory.EnumerateFiles(template,"*",SearchOption.AllDirectories)){
     checkedFiles.Add(file);
