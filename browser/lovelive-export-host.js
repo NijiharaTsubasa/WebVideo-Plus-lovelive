@@ -9,4 +9,5 @@ globalThis.__webgalOfflineExportHost = {
   scheduleAuto(callback, delay) { return (globalThis.__nativeScheduleAuto ?? setTimeout)(callback, delay); },
   scheduleAssetMount(callback) { __pwClock.controller._embedder.setTimeout(callback, 0); },
   characterFailed(error) { globalThis.__exportGltfFailure = error; },
+  shouldRenderGltfFrames() { return !globalThis.__nativePlanning; },
 };
