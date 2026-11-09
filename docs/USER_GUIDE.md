@@ -2,9 +2,9 @@
 
 面向 WebGAL Terre 的视觉小说视频制作辅助工具。提供批量编辑、剧情导航、音乐配置、备份/检查、结构化故事导入与视频导出；生成式 AI 组件为可选 Beta，需要自行配置 API Key。
 
-[下载安装器](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16) · [1.1.16 发行说明](releases/RELEASE_NOTES_1.1.16.md) · [版本记录](../CHANGELOG.md) · [构建说明](BUILDING.md) · [MPL-2.0](../LICENSE) · [许可范围](../LICENSES.md) · [来源与许可](../NOTICE.md)
+[下载已发布安装器](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16) · [1.1.17 发行说明](releases/RELEASE_NOTES_1.1.17.md) · [版本记录](../CHANGELOG.md) · [构建说明](BUILDING.md) · [MPL-2.0](../LICENSE) · [许可范围](../LICENSES.md) · [来源与许可](../NOTICE.md)
 
-**当前源码版本：1.1.16（内部开发标识 0.8.16；安装器 Win32 版本 1.1.16.0，导出内核 0.6.65）。** 最新正式安装器、校验值和发布说明以 [GitHub Releases](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16) 为准。
+**当前源码版本：1.1.17（内部开发标识 0.8.16；安装器 Win32 版本 1.1.17.0，导出内核 0.6.66）。** 本次修复已完成核心回归，最终发行包验收记录见对应发布页；当前已发布的正式安装器、校验值和发布说明见 [1.1.16 发行页](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16)。
 
 当前适配基线为 **Terre 4.6.4**；对前端被重新打包但挂载语义未变化的 4.6.4 变体，会使用结构锚点检查而不是要求整份前端 bundle 哈希完全一致。
 
@@ -58,6 +58,12 @@
 
 并行数支持 1–32，但更多进程不一定更快。自动切点模式下，Planner 会按剧情安全点和 DOM workload 估算分配分片，且分片数不会超过有效 worker 数，避免额外 WebView2 冷启动。手动切点模式下，切点决定分片数，并行数只决定同时执行多少片。**1080p 是常规推荐档，1440p 适合需要更高输出分辨率的场景；4K 每帧像素量约为 1080p 的 4 倍，建议 2–4 worker。若原始背景、立绘或 Live2D 贴图本身不是 4K，通常不会获得更多真实细节。**
 
+时长分析和导出使用独立任务副本。副本禁用游戏自动存档，避免加速预演按游戏时间每秒复制当前状态与回溯记录、排队写入浏览器存储。原工程、编辑器预览和玩家正常游戏中的存档行为保持原样；导出器自己的任务快照、切段恢复与重试机制继续使用。原因、实测和复验步骤见[预演自动存档性能修复](AUTOSAVE-PLANNING.md)。
+
+### 导出中的 Live2D 表情
+
+表情生命周期保护仅应用于导出任务副本。导出只等待当前已请求的表情，不等待全量预取完成、不固定 sleep；当前加载失败或真实等待超过 20 秒会明确报错。模型销毁与请求替换会释放过时等待，失败缓存再次被选中时仍须报告，同时保留原生重试能力。原工程、编辑器预览与正常游戏不改，适用引擎和回归边界见[Live2D 表情安全说明](LIVE2D-EXPRESSION-SAFETY.md)。
+
 ### 舞台图层导出
 
 “导出舞台”包含两个独立选项，默认都勾选：
@@ -107,7 +113,7 @@ B:下一段从这条语句开始;
 
 旧数字切点仅保留 **CLI / API / 已排队任务兼容**：例如 `--segment-cut-mode manual --manual-cut-points "300,12.5s,00:20"`。兼容输入可与标记合并，仍使用旧的输出相对帧规则及范围校验。新导出面板不再提供数字编辑框，也不会隐式带入已保存的旧数字切点；有旧值时会明确提示。只用剧本标记的 CLI 可传 `--segment-cut-mode manual`，不需要 `--manual-cut-points`。原有 `--mode manual` 是对白等待模式，与切点模式无关。
 
-1.1.16 的改动见[发行说明](releases/RELEASE_NOTES_1.1.16.md)与[版本记录](../CHANGELOG.md)；此前版本见[发行说明索引](releases/README.md)。
+本次 Live2D 表情安全与预演自动存档修复的范围见[发行说明](releases/RELEASE_NOTES_1.1.17.md)与[版本记录](../CHANGELOG.md)。最终发行状态和发行包验收记录以对应发布页为准；此前版本见[发行说明索引](releases/README.md)。
 
 ## 两轮基础舞台
 
@@ -214,5 +220,7 @@ React、Fluent UI、IconPark、TanStack Virtual、Zustand、Monaco Editor、Pixi
 特别感谢 **北风的猫5306**。作为最初参考的 WebGAL 助手提示词作者，其资料提供了角色与素材使用说明、脚本编写思路和高级演出特效参考。默认滤镜与预制效果中有一部分由这些公开资料整理、分类并做兼容性修正而来；原作者贡献不会因为本项目的界面封装而被改写。相关入口见 [webgal-skill 的 references](https://github.com/xxSak1xx/webgal-skill/tree/main/references) 及其[原始致谢说明](https://github.com/xxSak1xx/webgal-skill#声明)。
 
 也感谢提供滤镜资料、表格、基础角色映射，以及持续进行标准 Terre、MyGO 分发版和 Steam 版兼容性测试并逐项反馈问题的贡献者。
+
+感谢 [NijiharaTsubasa](https://github.com/NijiharaTsubasa)（WebGAL LoveLive 专版作者）定位 planning 阶段的自动存档性能热点，并提供禁用自动存档后加速的验证线索。
 
 Live2D 模型、角色图像、背景、音乐、配音等素材权利仍归各自权利人，本安装包不因此取得或转授这些素材的权利。更完整的第三方来源与许可说明见 [NOTICE.md](../NOTICE.md)、[LICENSES.md](../LICENSES.md) 和 [licenses/THIRD-PARTY.md](../licenses/THIRD-PARTY.md)。

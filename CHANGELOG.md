@@ -1,5 +1,13 @@
 # 版本记录
 
+## 1.1.17
+
+安装器 1.1.17.0，导出内核 0.6.66。已完成核心回归，验证范围与最终发行包记录入口见[发行说明](docs/releases/RELEASE_NOTES_1.1.17.md)。
+
+- 补齐已请求 Live2D 表情跨 await / destroy 的生命周期保护和关键资源等待；只等待当前请求，真实 20 秒超时明确报错，保留失败缓存重选与原生重试语义。详见[安全说明](docs/LIVE2D-EXPRESSION-SAFETY.md)。
+- 导出任务副本跳过游戏自动快速存档，减少预演中回溯记录复制和存储写入；正常游戏自动存档和手动存档保留。详见[预演自动存档性能修复](docs/AUTOSAVE-PLANNING.md)。
+- 感谢 [NijiharaTsubasa](https://github.com/NijiharaTsubasa) 提供 planning 阶段自动存档性能热点的反馈及禁用后加速的验证线索。
+
 ## 1.1.16
 
 2026-11-02。安装器 1.1.16.0，导出内核 0.6.65。

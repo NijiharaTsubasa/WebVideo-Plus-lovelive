@@ -10,17 +10,18 @@ namespace NativeVideo {
  // defaults, split chunks and CSS stay identical to the game being exported.
  public sealed class EngineAdapter {
   public const string MygoHash = "0407b5a6326ebaa1608d16541b79b4ccc54a0432947ae7d3a6a855606a68866e";
+  const string MygoExpressionPlugin="assets/index.es-Zih9sQ-u.js";
+  const string MygoExpressionPluginHash="c4c5e37616ba7e3aa30dccae74e6349c4f1a8fce62154478fd205a324c69b3dc";
   const string BundledWebgalBundle = "assets/index-R1tKotR6.js";
   public readonly string Id, Version, Source, Bundle, SourceKind, FallbackReason;
   readonly bool externalWebgal, strictMygoHash;
   public bool IsLoveLive { get { return Id == "lovelive"; } }
   public bool IsMygo { get { return Id == "mygo"; } }
   public bool RuntimeParity { get { return externalWebgal||SourceKind=="mygo-project-runtime"; } }
-  internal string PlanningAutoSavePatchStatus { get; private set; }
   EngineAdapter(string id, string version, string source, string bundle, string sourceKind, bool external=false, bool strictMygo=false, string fallbackReason=null) {
    Id=id; Version=version; Source=source; Bundle=bundle; SourceKind=sourceKind; externalWebgal=external; strictMygoHash=strictMygo; FallbackReason=fallbackReason;
   }
-  public object Describe() { string hash=Files.Hash(Path.Combine(Source,Bundle)); return J.O("id",Id,"version",Version,"bundle",Bundle,"sourceHash",hash,"canonicalMygo",IsMygo&&hash==MygoHash,"sourceKind",SourceKind,"runtimeParity",RuntimeParity,"fallbackReason",FallbackReason,"adapterVersion",4); }
+  public object Describe() { string hash=Files.Hash(Path.Combine(Source,Bundle)); return J.O("id",Id,"version",Version,"bundle",Bundle,"sourceHash",hash,"canonicalMygo",IsMygo&&hash==MygoHash,"sourceKind",SourceKind,"runtimeParity",RuntimeParity,"fallbackReason",FallbackReason,"adapterVersion",6); }
 
   static string MainBundle(string root) {
    string html=Path.Combine(root,"index.html");
@@ -68,6 +69,9 @@ namespace NativeVideo {
     // Version is advisory for a per-game derivative runtime. Try the game's
     // actual engine first; only the structural patch contract decides whether it
     // is safe enough for offline export.
+    // Validate before selection so unsupported project plugins retain the
+    // existing visible fallback to a verified canonical MyGO runtime.
+    if(!SupportedMygoExpressionPlugin(root))throw new IOException("MyGO Live2D 表情插件缺失或字节不匹配");
     adapter.Patch(File.ReadAllText(main));
     return adapter;
    } catch(Exception e) {
@@ -120,6 +124,10 @@ namespace NativeVideo {
     return null;
    }
   }
+  static bool SupportedMygoExpressionPlugin(string root) {
+   string plugin=Path.Combine(root,MygoExpressionPlugin);
+   return File.Exists(plugin)&&Files.Hash(plugin)==MygoExpressionPluginHash;
+  }
   public static bool SupportedMygo(string root) {
    try {
     var descriptor=Path.Combine(root,"webgal-engine.json");
@@ -127,7 +135,7 @@ namespace NativeVideo {
     var metadata=J.Read(descriptor);
     if(J.S(metadata,"id")!="webgal-mygo.mygo"||J.S(metadata,"version")!="3.2.1"||J.S(metadata,"webgalVersion")!="4.6.4")return false;
     string bundle=MainBundle(root);
-    return bundle!=null&&File.Exists(bundle)&&new FileInfo(bundle).Length<8*1024*1024&&Files.Hash(bundle)==MygoHash;
+    return bundle!=null&&File.Exists(bundle)&&new FileInfo(bundle).Length<8*1024*1024&&Files.Hash(bundle)==MygoHash&&SupportedMygoExpressionPlugin(root);
    } catch { return false; }
   }
   public static string[] MygoSearchRoots(string gamesRoot=null,string terreDir=null,string configRoot=null) {
@@ -211,25 +219,25 @@ namespace NativeVideo {
     string html=Path.Combine(root,"index.html");
     string script=File.ReadAllText(Path.Combine(Files.Root,"browser/lovelive-export-host.js"));
     Files.Atomic(html,ReplaceOnce(File.ReadAllText(html),"<head>","<head><script>"+script+"</script>"));
-    text=PatchLoveLiveAssetQueue(text);
+    PrepareLoveLiveExpressionLifecycle(file,text);
+    text=PatchLoveLiveAutoSave(PatchLoveLiveAssetQueue(text));
    } else {
     if(externalWebgal)text=InstrumentExternalWebgal(text);
+    PrepareExpressionLifecycle(root);
     text=Patch(text);
    }
-   string autoSavePatch;
-   Files.Atomic(file,PatchPlanningAutoSave(text,out autoSavePatch));
-   PlanningAutoSavePatchStatus=autoSavePatch;
+   Files.Atomic(file,text);
    // SnapshotServer serves raw files only; removing stale compressed copies also
    // prevents later tooling from mistaking them for the patched main bundle.
    foreach(string extension in new[]{".gz",".br"})if(File.Exists(file+extension))File.Delete(file+extension);
    J.Write(Path.Combine(root,"export-engine.json"),Describe());
   }
-  static string PatchPlanningAutoSave(string text,out string status) {
-   // Locate the scheduled fast save, leaving explicit saves and the rendering workers intact.
-   var matches=Regex.Matches(text,@"async function (?<save>[$\w]+)\(\)\s*\{[^{}]{0,600}\.dispatch\([^{}]{0,100}\.setFastSave\([^{}]{0,100}\)[^{}]{0,120}\}\s*(?:const|let|var)\s+[$\w]+\s*=\s*[$\w]+\(\s*\(\)\s*=>\s*\{\s*(?<call>\k<save>\(\))\s*;?\s*\}\s*,\s*(?:1e3|1000)\s*\)",RegexOptions.CultureInvariant);
-   status=matches.Count==1?"disabled-in-planner":matches.Count==0?"unrecognized":"ambiguous";
+  const string AutoSaveExportGuard="if(globalThis.__nativeAdapterInstalled===true)return;";
+  static string PatchLoveLiveAutoSave(string text) {
+   // Identify the autosave function by its throttled caller, independent of minified names.
+   var matches=Regex.Matches(text,@"async function (?<save>[$\w]+)\(\)\s*(?<body>\{)[^{}]{0,600}\.dispatch\([^{}]{0,100}\.setFastSave\([^{}]{0,100}\)[^{}]{0,120}\}\s*(?:const|let|var)\s+[$\w]+\s*=\s*[$\w]+\(\s*\(\)\s*=>\s*\{\s*\k<save>\(\)\s*;?\s*\}\s*,\s*(?:1e3|1000)\s*\)",RegexOptions.CultureInvariant);
    if(matches.Count!=1)return text;
-   return text.Insert(matches[0].Groups["call"].Index,"if(!globalThis.__nativePlanning) ");
+   return text.Insert(matches[0].Groups["body"].Index+1,AutoSaveExportGuard);
   }
   static string PatchLoveLiveAssetQueue(string text) {
    const string anchor="task callback must be a function";
@@ -242,6 +250,57 @@ namespace NativeVideo {
     throw new IOException("LoveLive Pixi 素材队列计时入口不匹配");
    queue=queue.Replace("setTimeout(","globalThis.__webgalOfflineExportHost.scheduleAssetMount(");
    return text.Substring(0,start)+queue+text.Substring(end);
+  }
+   // Find the module imported by this build instead of scanning old bundles in assets/.
+   static void PrepareLoveLiveExpressionLifecycle(string bundle,string text) {
+    string directory=Path.GetDirectoryName(bundle);
+    foreach(var name in Regex.Matches(text,@"\bimport\([""']\./(?<name>[\w.-]+\.js)[""']\)").Cast<Match>().Select(m=>m.Groups["name"].Value).Distinct()) {
+     string file=Path.Combine(directory,name);
+     if(!File.Exists(file))continue;
+     string source=File.ReadAllText(file);
+     if(!source.Contains(" as ExpressionManager"))continue;
+     string patched;
+     // A different SDK build can still export via the LoveLive host.
+     try{patched=PatchExpressionLifecycle(source);}catch(IOException){continue;}
+     WriteExpressionPlugin(file,patched);
+    }
+   }
+   // Verify the pinned upstream modules before changing the job-local copy.
+  void PrepareExpressionLifecycle(string root) {
+   string name=IsMygo?"index.es-Zih9sQ-u.js":"index.es-erQsk_Nn.js";
+   string expected=IsMygo?MygoExpressionPluginHash:"46590e11b6fb9877524fbb27525734d5208b67b3d28b4afb226d849bc95d7505";
+   string file=Path.Combine(root,"assets",name);
+   if(!File.Exists(file)||Files.Hash(file)!=expected)throw new IOException("Live2D 表情插件缺失或字节不匹配："+name);
+    WriteExpressionPlugin(file,PatchExpressionLifecycle(File.ReadAllText(file)));
+   }
+   static string PatchExpressionLifecycle(string text) {
+   // A factory prefetch can cache an already handled failure. Remember it per
+   // manager/index without failing unrelated export work; if setExpression
+   // later requests that entry and still receives no expression, surface it
+   // to the current-request barrier. Always try the native loader first: SDK
+   // parse/setup failures remove their cache task and can be retried normally.
+   text=ReplaceOnce(text,"loadExpression(t){return I(this,null,function*(){if(!this.definitions[t])","loadExpression(t){return I(this,null,function*(){if(this.destroyed)return;if(!this.definitions[t])");
+   text=ReplaceOnce(text,"const e=yield this._loadExpression(t);return this.expressions[t]=e,e","let e;try{e=yield this._loadExpression(t)}catch(error){if(this.destroyed)return;throw error}if(this.destroyed)return;if(!e&&this.__webvideoExpressionErrors?.has(t))globalThis.__exportExpressionFailed?.(this,t,this.__webvideoExpressionErrors.get(t));return this.expressions[t]=e,e");
+   text=ReplaceOnce(text,"setRandomExpression(){return I(this,null,function*(){if(this.definitions.length)","setRandomExpression(){return I(this,null,function*(){if(this.destroyed)return!1;if(this.definitions.length)");
+   // A request generation also handles A -> B -> A and returning to the current
+   // expression while an older, different expression is still loading.
+   text=ReplaceOnce(text,@"setExpression(t){return I(this,null,function*(){if(typeof t!=""number""&&(t=this.getExpressionIndex(t)),!(t>-1&&t<this.definitions.length)||t===this.expressions.indexOf(this.currentExpression))return!1;this.reserveExpressionIndex=t;const e=yield this.loadExpression(t);return!e||this.reserveExpressionIndex!==t?!1:(this.reserveExpressionIndex=-1,this.currentExpression=e,this._setExpression(e),!0)})}",
+    @"setExpression(t){return I(this,null,function*(){if(this.destroyed)return!1;if(typeof t!=""number""&&(t=this.getExpressionIndex(t)),!(t>-1&&t<this.definitions.length))return!1;const request=(this.__webvideoExpressionGeneration||0)+1;this.__webvideoExpressionGeneration=request;this.__webvideoExpressionIndex=t;if(t===this.expressions.indexOf(this.currentExpression)){this.reserveExpressionIndex=-1;return!1}this.reserveExpressionIndex=t;let e;try{e=yield this.loadExpression(t)}catch(error){if(this.destroyed)return!1;throw error}return this.destroyed||request!==this.__webvideoExpressionGeneration||!e||this.reserveExpressionIndex!==t?!1:(this.reserveExpressionIndex=-1,this.currentExpression=e,this._setExpression(e),!0)})}");
+   // Cached loader promises can resolve successfully after destroy, without an
+   // XHR abort. Do not create SDK expressions or emit a false success then.
+   text=ReplaceOnce(text,@"static loadExpression(s,t){var e;const i=r=>s.emit(""expressionLoadError"",t,r);",@"static loadExpression(s,t){if(s.destroyed)return Promise.resolve(void 0);var e;const i=r=>{if(!s.destroyed){(s.__webvideoExpressionErrors??=new Map).set(t,r);globalThis.__exportExpressionFailed?.(s,t,r);s.emit(""expressionLoadError"",t,r)}};");
+   text=ReplaceOnce(text,@"const l=L.expressionTasksMap.get(s);l&&delete l[t];const h=s.createExpression(o,r);return s.emit(""expressionLoaded"",t,h),h",@"const l=L.expressionTasksMap.get(s);l&&delete l[t];if(s.destroyed)return;const h=s.createExpression(o,r);if(s.destroyed)return;s.__webvideoExpressionErrors?.delete(t);return s.emit(""expressionLoaded"",t,h),h");
+   text=ReplaceOnce(text,".catch(o=>{C.warn(s.tag,`Failed to load expression:",".catch(o=>{if(s.destroyed)return;C.warn(s.tag,`Failed to load expression:");
+   text=ReplaceOnce(text,"catch(r){C.warn(s.tag,`Failed to load expression at", "catch(r){if(s.destroyed)return Promise.resolve(void 0);C.warn(s.tag,`Failed to load expression at");
+   string manager="Ot";
+   if(!text.Contains(manager+" as ExpressionManager"))throw new IOException("Live2D 表情导出接口不匹配");
+   text+="\n;const __webvideoSetExpression="+manager+".prototype.setExpression;"+manager+".prototype.setExpression=function(index){const start=()=>__webvideoSetExpression.call(this,index);return globalThis.__exportTrackExpression?globalThis.__exportTrackExpression(this,index,start):start()};\n";
+    return text;
+   }
+   static void WriteExpressionPlugin(string file,string text) {
+   Files.Atomic(file,text);
+   foreach(string extension in new[]{".gz",".br"})if(File.Exists(file+extension))File.Delete(file+extension);
+
   }
   static string ReplaceOnce(string text,string from,string to) {
    int at=text.IndexOf(from,StringComparison.Ordinal);
@@ -270,6 +329,14 @@ namespace NativeVideo {
   public string Patch(string text) {
    if(text.Contains("__nativeAdapterInstalled"))throw new IOException("工作副本不能重复适配");
    string core=IsMygo?"R":"I", observe=IsMygo?"OP":"bP", next=IsMygo?"vp":"dp", autoCallback=IsMygo?"dTe":"JAe";
+   // The offline clock makes the engine's one-second autosave throttle run at
+   // story speed. Each save clones the growing backlog and queues an IndexedDB
+   // write, although export never resumes from this quick-save slot. Guard the
+   // automatic entry point before it builds the save; manual saves and the
+   // source game's runtime remain untouched. Patch() only runs on job copies.
+   string saveStore=IsMygo?"Ie":"Pe";
+   string autoSaveStart="(){if("+saveStore+".getState().GUI.showTitle||"+core+".sceneManager.sceneData.currentSentenceId===0||"+core+".sceneManager.lockSceneWrite)return;";
+   text=ReplaceOnce(text,autoSaveStart,"(){"+AutoSaveExportGuard+autoSaveStart.Substring(3));
    text=ReplaceOnce(text,observe+"=e=>{var n;",observe+"=e=>{globalThis.__nativeObserve?.(e);var n;");
    text=ReplaceOnce(text,next+"=()=>{"+core+".events.userInteractNext.emit()",next+"=()=>{if(globalThis.__nativeBeforeNext?.()===false)return;"+core+".events.userInteractNext.emit()");
    text=ReplaceOnce(text,core+".gameplay.autoTimeout=setTimeout("+autoCallback+",t)",core+".gameplay.autoTimeout=(globalThis.__nativeScheduleAuto??setTimeout)("+autoCallback+",t)");
