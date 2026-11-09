@@ -2,9 +2,9 @@
 
 面向 WebGAL Terre 的视觉小说视频制作辅助工具。提供批量编辑、剧情导航、音乐配置、备份/检查、结构化故事导入与视频导出；生成式 AI 组件为可选 Beta，需要自行配置 API Key。
 
-[下载安装器](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16) · [1.1.16 发行说明](releases/RELEASE_NOTES_1.1.16.md) · [版本记录](../CHANGELOG.md) · [构建说明](BUILDING.md) · [MPL-2.0](../LICENSE) · [许可范围](../LICENSES.md) · [来源与许可](../NOTICE.md)
+[下载已发布安装器](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16) · [1.1.17 发行草案](releases/RELEASE_NOTES_1.1.17.md) · [版本记录](../CHANGELOG.md) · [构建说明](BUILDING.md) · [MPL-2.0](../LICENSE) · [许可范围](../LICENSES.md) · [来源与许可](../NOTICE.md)
 
-**当前源码版本：1.1.16（内部开发标识 0.8.16；安装器 Win32 版本 1.1.16.0，导出内核 0.6.65）。** 最新正式安装器、校验值和发布说明以 [GitHub Releases](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16) 为准。
+**当前源码版本：1.1.17（内部开发标识 0.8.16；安装器 Win32 版本 1.1.17.0，导出内核 0.6.66）。** 本次候选尚待完整 CI 与隔离宿主验收；当前已发布的正式安装器、校验值和发布说明见 [1.1.16 发行页](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16)。
 
 当前适配基线为 **Terre 4.6.4**；对前端被重新打包但挂载语义未变化的 4.6.4 变体，会使用结构锚点检查而不是要求整份前端 bundle 哈希完全一致。
 
@@ -107,7 +107,7 @@ B:下一段从这条语句开始;
 
 旧数字切点仅保留 **CLI / API / 已排队任务兼容**：例如 `--segment-cut-mode manual --manual-cut-points "300,12.5s,00:20"`。兼容输入可与标记合并，仍使用旧的输出相对帧规则及范围校验。新导出面板不再提供数字编辑框，也不会隐式带入已保存的旧数字切点；有旧值时会明确提示。只用剧本标记的 CLI 可传 `--segment-cut-mode manual`，不需要 `--manual-cut-points`。原有 `--mode manual` 是对白等待模式，与切点模式无关。
 
-1.1.16 的改动见[发行说明](releases/RELEASE_NOTES_1.1.16.md)与[版本记录](../CHANGELOG.md)；此前版本见[发行说明索引](releases/README.md)。
+1.1.17 候选拟合入 Live2D 表情加载与销毁时序保护、关键资源等待，以及导出预演自动存档优化，详见[发行草案](releases/RELEASE_NOTES_1.1.17.md)与[版本记录](../CHANGELOG.md)。自动存档优化只应用于导出任务副本，正常游戏自动存档和手动存档保留；本次合并后的验收尚待完成。此前版本见[发行说明索引](releases/README.md)。
 
 ## 两轮基础舞台
 
