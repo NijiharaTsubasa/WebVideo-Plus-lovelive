@@ -18,7 +18,7 @@ try {
 }
 '@
  $corePath=Join-Path $temp 'Core.cs';[IO.File]::WriteAllText($corePath,$core,[Text.UTF8Encoding]::new($false))
- $sources=@($corePath,(Join-Path $currentRoot 'src/SceneChain.cs'),(Join-Path $PSScriptRoot 'engine-adapter-dual-profile.portable-json.cs'),(Join-Path $PSScriptRoot 'SceneOnlyTailChecks.cs'))
+ $sources=@($corePath,(Join-Path $currentRoot 'src/SceneChain.cs'),(Join-Path $PSScriptRoot 'resource-url.portable-json.cs'),(Join-Path $PSScriptRoot 'SceneOnlyTailChecks.cs'))
  if(Test-Path (Join-Path $root 'src/SharedResourceServer.cs')){
   $resource=[IO.File]::ReadAllText((Join-Path $root 'src/SharedResourceServer.cs'))
   $resourceEnd=$resource.IndexOf(' public sealed class SharedResourceServer:')
