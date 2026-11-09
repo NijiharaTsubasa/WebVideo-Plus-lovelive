@@ -25,9 +25,21 @@ public static class Live2DExpressionProbe {
   Files.Atomic(Path.Combine(output,"native.mjs"),File.ReadAllText(Path.Combine(shell,plugin)));
   Files.Atomic(Path.Combine(output,"patched.mjs"),File.ReadAllText(Path.Combine(prepared,plugin)));
   J.Write(Path.Combine(output,"result.json"),J.O("engine",adapter.Describe(),"plugin",plugin,"sourceHash",pluginHash,"patchedHash",Files.Hash(Path.Combine(prepared,plugin))));
-  Files.Atomic(Path.Combine(shell,plugin),File.ReadAllText(Path.Combine(shell,plugin))+"\n// tampered fixture");
+  Action verifyFallback=()=>{
+   if(!mygo)return;
+   Assert(!EngineAdapter.SupportedMygo(shell),"Unknown plugin appeared as a supported machine engine");
+   var fallback=EngineAdapter.Select(J.O("project",shell,"mygoRoot",source,"settings",J.O("engine","mygo")));
+   Assert(Files.Full(fallback.Source)==source&&fallback.SourceKind=="mygo-derivative-runtime"&&!string.IsNullOrEmpty(fallback.FallbackReason),"Unknown MyGO plugin lost its visible canonical fallback");
+  };
+  if(mygo){
+   File.AppendAllText(Path.Combine(shell,adapter.Bundle),"\n// compatible legacy derivative",Files.Utf8);
+   var legacy=EngineAdapter.Select(copied);
+   Assert(Files.Full(legacy.Source)==Files.Full(shell)&&legacy.SourceKind=="mygo-project-runtime","Compatible legacy main lost project selection");
+   legacy.Prepare(Path.Combine(output,"legacy-known-plugin"));
+  }
+  Files.Atomic(Path.Combine(shell,plugin),File.ReadAllText(Path.Combine(shell,plugin))+"\n// tampered fixture");verifyFallback();
   Reject(()=>adapter.Prepare(Path.Combine(output,"tampered-output")));
-  File.Delete(Path.Combine(shell,plugin));Reject(()=>adapter.Prepare(Path.Combine(output,"missing-output")));
+  File.Delete(Path.Combine(shell,plugin));verifyFallback();Reject(()=>adapter.Prepare(Path.Combine(output,"missing-output")));
   Assert(Files.Hash(Path.Combine(source,original.Bundle))==mainHash&&Files.Hash(Path.Combine(source,plugin))==pluginHash,"Original engine changed");
   Console.WriteLine("PASS "+version+" exact plugin preparation, source preservation, compressed copies, changed/missing plugin rejection");return 0;
  }catch(Exception error){Console.Error.WriteLine(error);return 1;}}
