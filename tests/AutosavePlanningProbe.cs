@@ -26,12 +26,7 @@ public static class AutosavePlanningProbe {
   var adapter=EngineAdapter.Select(J.O("project",engineRoot,"engineRoot",engineRoot,"settings",J.O("engine",engine)));
   Assert(Files.Full(adapter.Source)==engineRoot,"Fixture must be selected without fallback");
   string input=Path.Combine(engineRoot,adapter.Bundle),sourceHash=Files.Hash(input),raw=File.ReadAllText(input);
-  string patched;
-  if(adapter.IsLoveLive){
-   string web=output+".work/contract/web";
-   adapter.Prepare(web);
-   patched=File.ReadAllText(Path.Combine(web,adapter.Bundle));
-  }else patched=adapter.Patch(raw);
+  string patched=adapter.Patch(raw);
   Assert(Regex.Matches(patched,Regex.Escape(Guard)).Count==1,"One automatic-save guard required");
   int guardAt=patched.IndexOf(Guard,StringComparison.Ordinal),methodStart=patched.LastIndexOf("async function ",guardAt,StringComparison.Ordinal),methodEnd=patched.IndexOf("}const ",guardAt,StringComparison.Ordinal);
   Assert(methodStart>=0&&methodEnd>guardAt,"Pinned automatic-save function extraction failed");

@@ -17,6 +17,7 @@ namespace NativeVideo {
   readonly bool externalWebgal, strictMygoHash;
   public bool IsLoveLive { get { return Id == "lovelive"; } }
   public bool IsMygo { get { return Id == "mygo"; } }
+  public bool SupportsMygoFigures { get { return IsMygo || IsLoveLive; } }
   public bool RuntimeParity { get { return externalWebgal||SourceKind=="mygo-project-runtime"; } }
   EngineAdapter(string id, string version, string source, string bundle, string sourceKind, bool external=false, bool strictMygo=false, string fallbackReason=null) {
    Id=id; Version=version; Source=source; Bundle=bundle; SourceKind=sourceKind; externalWebgal=external; strictMygoHash=strictMygo; FallbackReason=fallbackReason;
@@ -219,59 +220,63 @@ namespace NativeVideo {
     string html=Path.Combine(root,"index.html");
     string script=File.ReadAllText(Path.Combine(Files.Root,"browser/lovelive-export-host.js"));
     Files.Atomic(html,ReplaceOnce(File.ReadAllText(html),"<head>","<head><script>"+script+"</script>"));
-    PrepareLoveLiveExpressionLifecycle(file,text);
-    text=PatchLoveLiveAutoSave(PatchLoveLiveAssetQueue(text));
-   } else {
-    if(externalWebgal)text=InstrumentExternalWebgal(text);
-    PrepareExpressionLifecycle(root);
-    text=Patch(text);
    }
-   Files.Atomic(file,text);
+   if(externalWebgal)text=InstrumentExternalWebgal(text);
+   PrepareExpressionLifecycle(root,file,text);
+   Files.Atomic(file,Patch(text));
    // SnapshotServer serves raw files only; removing stale compressed copies also
    // prevents later tooling from mistaking them for the patched main bundle.
    foreach(string extension in new[]{".gz",".br"})if(File.Exists(file+extension))File.Delete(file+extension);
    J.Write(Path.Combine(root,"export-engine.json"),Describe());
   }
   const string AutoSaveExportGuard="if(globalThis.__nativeAdapterInstalled===true)return;";
-  static string PatchLoveLiveAutoSave(string text) {
+  string PatchAutoSave(string text) {
    // Identify the autosave function by its throttled caller, independent of minified names.
    var matches=Regex.Matches(text,@"async function (?<save>[$\w]+)\(\)\s*(?<body>\{)[^{}]{0,600}\.dispatch\([^{}]{0,100}\.setFastSave\([^{}]{0,100}\)[^{}]{0,120}\}\s*(?:const|let|var)\s+[$\w]+\s*=\s*[$\w]+\(\s*\(\)\s*=>\s*\{\s*\k<save>\(\)\s*;?\s*\}\s*,\s*(?:1e3|1000)\s*\)",RegexOptions.CultureInvariant);
-   if(matches.Count!=1)return text;
-   return text.Insert(matches[0].Groups["body"].Index+1,AutoSaveExportGuard);
+   if(matches.Count==1)return text.Insert(matches[0].Groups["body"].Index+1,AutoSaveExportGuard);
+   if(IsLoveLive)return text;
+   // Retain the existing entry match for project runtimes with a modified throttle.
+   string store=IsMygo?"Ie":"Pe",core=IsMygo?"R":"I";
+   string start="(){if("+store+".getState().GUI.showTitle||"+core+".sceneManager.sceneData.currentSentenceId===0||"+core+".sceneManager.lockSceneWrite)return;";
+   return ReplaceOnce(text,start,"(){"+AutoSaveExportGuard+start.Substring(3));
   }
-  static string PatchLoveLiveAssetQueue(string text) {
+  static string PatchAssetQueue(string text) {
    const string anchor="task callback must be a function";
    int start=text.IndexOf(anchor,StringComparison.Ordinal);
    int end=start<0?-1:text.IndexOf(".queue=function(",start,StringComparison.Ordinal);
    if(start<0||end<0||end-start>4096||text.IndexOf(anchor,start+anchor.Length,StringComparison.Ordinal)>=0)
-    throw new IOException("LoveLive Pixi 素材队列入口不匹配");
+    throw new IOException("Pixi 素材队列入口不匹配");
    string queue=text.Substring(start,end-start);
    if(Regex.Matches(queue,@"\bsetTimeout\(").Count!=3)
-    throw new IOException("LoveLive Pixi 素材队列计时入口不匹配");
-   queue=queue.Replace("setTimeout(","globalThis.__webgalOfflineExportHost.scheduleAssetMount(");
+    throw new IOException("Pixi 素材队列计时入口不匹配");
+   queue=queue.Replace("setTimeout(","queueMicrotask(");
    return text.Substring(0,start)+queue+text.Substring(end);
   }
    // Find the module imported by this build instead of scanning old bundles in assets/.
-   static void PrepareLoveLiveExpressionLifecycle(string bundle,string text) {
+   static IEnumerable<string> FindImportedExpressionPlugins(string bundle,string text) {
     string directory=Path.GetDirectoryName(bundle);
     foreach(var name in Regex.Matches(text,@"\bimport\([""']\./(?<name>[\w.-]+\.js)[""']\)").Cast<Match>().Select(m=>m.Groups["name"].Value).Distinct()) {
      string file=Path.Combine(directory,name);
-     if(!File.Exists(file))continue;
-     string source=File.ReadAllText(file);
-     if(!source.Contains(" as ExpressionManager"))continue;
-     string patched;
-     // A different SDK build can still export via the LoveLive host.
-     try{patched=PatchExpressionLifecycle(source);}catch(IOException){continue;}
-     WriteExpressionPlugin(file,patched);
+     if(File.Exists(file)&&File.ReadAllText(file).Contains(" as ExpressionManager"))yield return file;
     }
    }
    // Verify the pinned upstream modules before changing the job-local copy.
-  void PrepareExpressionLifecycle(string root) {
+  IEnumerable<string> FindExpressionPlugins(string root,string bundle,string text) {
+   if(IsLoveLive)return FindImportedExpressionPlugins(bundle,text);
    string name=IsMygo?"index.es-Zih9sQ-u.js":"index.es-erQsk_Nn.js";
    string expected=IsMygo?MygoExpressionPluginHash:"46590e11b6fb9877524fbb27525734d5208b67b3d28b4afb226d849bc95d7505";
    string file=Path.Combine(root,"assets",name);
    if(!File.Exists(file)||Files.Hash(file)!=expected)throw new IOException("Live2D 表情插件缺失或字节不匹配："+name);
-    WriteExpressionPlugin(file,PatchExpressionLifecycle(File.ReadAllText(file)));
+   return new[]{file};
+  }
+  void PrepareExpressionLifecycle(string root,string bundle,string text) {
+   foreach(string file in FindExpressionPlugins(root,bundle,text)) {
+    string source=File.ReadAllText(file),patched;
+    // LoveLive can use a different Live2D SDK build through its native host.
+    try{patched=PatchExpressionLifecycle(source);}
+    catch(IOException){if(!IsLoveLive)throw;continue;}
+    WriteExpressionPlugin(file,patched);
+   }
    }
    static string PatchExpressionLifecycle(string text) {
    // A factory prefetch can cache an already handled failure. Remember it per
@@ -328,15 +333,19 @@ namespace NativeVideo {
   }
   public string Patch(string text) {
    if(text.Contains("__nativeAdapterInstalled"))throw new IOException("工作副本不能重复适配");
-   string core=IsMygo?"R":"I", observe=IsMygo?"OP":"bP", next=IsMygo?"vp":"dp", autoCallback=IsMygo?"dTe":"JAe";
    // The offline clock makes the engine's one-second autosave throttle run at
    // story speed. Each save clones the growing backlog and queues an IndexedDB
    // write, although export never resumes from this quick-save slot. Guard the
    // automatic entry point before it builds the save; manual saves and the
    // source game's runtime remain untouched. Patch() only runs on job copies.
-   string saveStore=IsMygo?"Ie":"Pe";
-   string autoSaveStart="(){if("+saveStore+".getState().GUI.showTitle||"+core+".sceneManager.sceneData.currentSentenceId===0||"+core+".sceneManager.lockSceneWrite)return;";
-   text=ReplaceOnce(text,autoSaveStart,"(){"+AutoSaveExportGuard+autoSaveStart.Substring(3));
+   text=PatchAutoSave(text);
+   if(SupportsMygoFigures)text=PatchAssetQueue(text);
+   // LoveLive registers these engine bindings through its source-level host.
+   if(!IsLoveLive)text=PatchLegacyHostBindings(text);
+   return text;
+  }
+  string PatchLegacyHostBindings(string text) {
+   string core=IsMygo?"R":"I", observe=IsMygo?"OP":"bP", next=IsMygo?"vp":"dp", autoCallback=IsMygo?"dTe":"JAe";
    text=ReplaceOnce(text,observe+"=e=>{var n;",observe+"=e=>{globalThis.__nativeObserve?.(e);var n;");
    text=ReplaceOnce(text,next+"=()=>{"+core+".events.userInteractNext.emit()",next+"=()=>{if(globalThis.__nativeBeforeNext?.()===false)return;"+core+".events.userInteractNext.emit()");
    text=ReplaceOnce(text,core+".gameplay.autoTimeout=setTimeout("+autoCallback+",t)",core+".gameplay.autoTimeout=(globalThis.__nativeScheduleAuto??setTimeout)("+autoCallback+",t)");
@@ -349,11 +358,6 @@ namespace NativeVideo {
     text=ReplaceOnce(text,"tt={\"preview.command.sync-scene\"","tt=globalThis.__probeCommands={\"preview.command.sync-scene\"");
     // Voiced lines are mixed offline; do not also start MyGO's simulated mouth.
     text=ReplaceOnce(text,"else if(b||_){const F=Date.now();S=bCe(F),T()}","else if(!globalThis.__exportControlledSpeech&&(b||_)){const F=Date.now();S=bCe(F),T()}");
-    int a=text.IndexOf("SS=function(){",StringComparison.Ordinal),b=a<0?-1:text.IndexOf("e.queue=function(t,r){return new e(t,r)},e}()",a,StringComparison.Ordinal);
-    if(a<0||b<0)throw new IOException("MyGO 素材队列接口不匹配");
-    string queue=text.Substring(a,b-a);
-    if(Regex.Matches(queue,@"setTimeout\(").Count!=3)throw new IOException("MyGO 素材队列计时接口不匹配");
-    text=text.Substring(0,a)+queue.Replace("setTimeout(","queueMicrotask(")+text.Substring(b);
     text=Deferral(text,"addBg(","addVideoBg(");
     text=Deferral(text,"addVideoBg(","addFigure(");
     text=Deferral(text,"addFigure(","async addJsonlFigure(");

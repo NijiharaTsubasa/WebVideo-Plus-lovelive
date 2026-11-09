@@ -20,6 +20,7 @@ public static class Live2DExpressionProbe {
   Files.Atomic(Path.Combine(shell,plugin)+".gz","stale fixture compression");Files.Atomic(Path.Combine(shell,plugin)+".br","stale fixture compression");
   var copied=J.D(request);copied["project"]=shell;copied["engineRoot"]=shell;var adapter=EngineAdapter.Select(copied);
   string prepared=Path.Combine(output,"prepared");adapter.Prepare(prepared);
+  if(mygo)CheckSharedMainPatches(prepared,adapter);
   Assert(Files.Hash(Path.Combine(shell,plugin))==pluginHash,"Input fixture changed");
   Assert(!File.Exists(Path.Combine(prepared,plugin)+".gz")&&!File.Exists(Path.Combine(prepared,plugin)+".br"),"Stale compression retained");
   Assert(File.Exists(Path.Combine(shell,plugin)+".gz"),"Source compression changed");
@@ -50,6 +51,7 @@ public static class Live2DExpressionProbe {
   string main=Path.Combine(source,adapter.Bundle),mainHash=Files.Hash(main);
   string prepared=Path.Combine(output,"prepared");
   adapter.Prepare(prepared);
+  CheckSharedMainPatches(prepared,adapter);
   string[] plugins=Directory.GetFiles(Path.Combine(prepared,"assets"),"*.js")
    .Where(file=>File.ReadAllText(file).Contains("const __webvideoSetExpression=")).ToArray();
   Assert(plugins.Length==1,"The active LoveLive expression plugin must be patched exactly once");
@@ -59,5 +61,14 @@ public static class Live2DExpressionProbe {
   Files.CopyFile(original,Path.Combine(output,"native.mjs"));
   Files.CopyFile(plugins[0],Path.Combine(output,"patched.mjs"));
   J.Write(Path.Combine(output,"result.json"),J.O("engine",adapter.Describe(),"plugin",plugin,"sourceHash",pluginHash,"patchedHash",Files.Hash(plugins[0])));
+ }
+ static void CheckSharedMainPatches(string prepared,EngineAdapter adapter){
+  string main=File.ReadAllText(Path.Combine(prepared,adapter.Bundle));
+  int start=main.IndexOf("task callback must be a function",StringComparison.Ordinal);
+  int end=start<0?-1:main.IndexOf(".queue=function(",start,StringComparison.Ordinal);
+  Assert(end>start,"Prepared Pixi queue missing in "+adapter.Id);
+  string queue=main.Substring(start,end-start);
+  Assert(!queue.Contains("setTimeout(")&&queue.Split(new[]{"queueMicrotask("},StringSplitOptions.None).Length==4,"Prepared Pixi queue must bypass the offline clock in "+adapter.Id);
+  Assert(main.Contains("if(globalThis.__nativeAdapterInstalled===true)return;"),"Prepared autosave guard missing in "+adapter.Id);
  }
 }

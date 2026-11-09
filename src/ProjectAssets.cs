@@ -259,7 +259,7 @@ namespace NativeVideo {
     var legacyModel=J.S(data,"model");if(legacyModel!=""){librariesNeeded.Add(ModelLibraryHint(legacyModel)??LegacyLibrary);children.Add(legacyModel);modelChildren.Add(legacyModel);}
     foreach(var child in modelChildren)if(!string.IsNullOrWhiteSpace(child))children.Add(child);
    }else{
-    if(!Adapter.IsMygo)throw new IOException("聚合模型需要 MyGO 引擎");
+    if(!Adapter.SupportsMygoFigures)throw new IOException("聚合模型需要 MyGO 引擎");
     if(extension==".jsonl")foreach(var line in File.ReadLines(file)){
      if(string.IsNullOrWhiteSpace(line))continue;var row=J.Parse(line);if(J.Get(row,"motions")!=null||J.Get(row,"expressions")!=null)continue;string child=J.S(row,"path");if(child!="")children.Add(child);
     }
@@ -429,7 +429,7 @@ namespace NativeVideo {
     if(cmd=="changeFigure"){
      var value=J.S(s,"content");
      if(Regex.IsMatch(value,@"\.(skel|mkv)([?#].*)?$",RegexOptions.IgnoreCase)||value.Contains("type=spine"))Add("unsupported",line,value,"当前不支持此立绘格式");
-     else if(!Adapter.IsMygo&&(Regex.IsMatch(value,@"\.(webm|mp4|mov|jsonl|wmdl)([?#].*)?$",RegexOptions.IgnoreCase)||value.Contains("type=video")))Add("unsupported",line,value,"此立绘需要选择已安装的 MyGO 3.2.1 引擎");
+     else if(!Adapter.SupportsMygoFigures&&(Regex.IsMatch(value,@"\.(webm|mp4|mov|jsonl|wmdl)([?#].*)?$",RegexOptions.IgnoreCase)||value.Contains("type=video")))Add("unsupported",line,value,"此立绘需要选择已安装的 MyGO 3.2.1 引擎");
     }
     foreach(var a in args)if(p.ContainsKey(a.Key))Ref(a.Value,J.S(p,a.Key),line,J.O("line",line,"startLine",line,"endLine",endLine,"kind","remove-argument","key",a.Key));
     if(cmd=="setAnimation")Ref("animation",J.S(s,"content")+".json",line,skip);
