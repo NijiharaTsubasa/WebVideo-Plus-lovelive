@@ -24,6 +24,7 @@ public static class AutosavePlanningProbe {
   string output=Files.Full(App.Arg("--output")),engine=App.Arg("--engine","webgal"),engineRoot=Files.Full(App.Arg("--engine-root"));
   Directory.CreateDirectory(Path.GetDirectoryName(output));
   var adapter=EngineAdapter.Select(J.O("project",engineRoot,"engineRoot",engineRoot,"settings",J.O("engine",engine)));
+  Assert(Files.Full(adapter.Source)==engineRoot,"Fixture must be selected without fallback");
   string input=Path.Combine(engineRoot,adapter.Bundle),sourceHash=Files.Hash(input),raw=File.ReadAllText(input),patched=adapter.Patch(raw);
   Assert(Regex.Matches(patched,Regex.Escape(Guard)).Count==1,"One automatic-save guard required");
   int guardAt=patched.IndexOf(Guard,StringComparison.Ordinal),methodStart=patched.LastIndexOf("async function ",guardAt,StringComparison.Ordinal),methodEnd=patched.IndexOf("}const ",guardAt,StringComparison.Ordinal);
@@ -56,8 +57,7 @@ public static class AutosavePlanningProbe {
    using(var browser=new BrowserHost(960,540)){
     await browser.Start(Path.Combine(run,"profile"));
     await browser.View.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync("globalThis.__autosaveRealNow=performance.now.bind(performance);globalThis.__autosaveMetrics={calls:0,suppressed:0,writes:0,syncMs:0};");
-    var startup=J.O("language",0,"code","zh_CN","source","preview");
-    await browser.InstallClock(false,false,startup);await browser.Navigate(web);await browser.VerifyRuntimeStartup(startup);
+    await browser.InstallClock(false,false);await browser.Navigate(web);
     await browser.RunFile("settings.js");await browser.Eval("__lockExportSettings({textSpeed:100,autoSpeed:100})");
     await browser.RunFile("timeline.js");
     var policy=J.O("renderDuringPlan",false,"captureDialogue",false,"mode","auto","holdMs",1000,"textSpeed",100,"autoSpeed",100,"durations",J.O(),"fps",30,"notendVisualTail",true);
