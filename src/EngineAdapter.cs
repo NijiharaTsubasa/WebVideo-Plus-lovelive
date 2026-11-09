@@ -18,7 +18,7 @@ namespace NativeVideo {
   EngineAdapter(string id, string version, string source, string bundle, string sourceKind, bool external=false, bool strictMygo=false, string fallbackReason=null) {
    Id=id; Version=version; Source=source; Bundle=bundle; SourceKind=sourceKind; externalWebgal=external; strictMygoHash=strictMygo; FallbackReason=fallbackReason;
   }
-  public object Describe() { string hash=Files.Hash(Path.Combine(Source,Bundle)); return J.O("id",Id,"version",Version,"bundle",Bundle,"sourceHash",hash,"canonicalMygo",IsMygo&&hash==MygoHash,"sourceKind",SourceKind,"runtimeParity",RuntimeParity,"fallbackReason",FallbackReason,"adapterVersion",4); }
+  public object Describe() { string hash=Files.Hash(Path.Combine(Source,Bundle)); return J.O("id",Id,"version",Version,"bundle",Bundle,"sourceHash",hash,"canonicalMygo",IsMygo&&hash==MygoHash,"sourceKind",SourceKind,"runtimeParity",RuntimeParity,"fallbackReason",FallbackReason,"adapterVersion",5); }
 
   static string MainBundle(string root) {
    string html=Path.Combine(root,"index.html");
@@ -229,6 +229,14 @@ namespace NativeVideo {
   public string Patch(string text) {
    if(text.Contains("__nativeAdapterInstalled"))throw new IOException("工作副本不能重复适配");
    string core=IsMygo?"R":"I", observe=IsMygo?"OP":"bP", next=IsMygo?"vp":"dp", autoCallback=IsMygo?"dTe":"JAe";
+   // The offline clock makes the engine's one-second autosave throttle run at
+   // story speed. Each save clones the growing backlog and queues an IndexedDB
+   // write, although export never resumes from this quick-save slot. Guard the
+   // automatic entry point before it builds the save; manual saves and the
+   // source game's runtime remain untouched. Patch() only runs on job copies.
+   string saveStore=IsMygo?"Ie":"Pe";
+   string autoSaveStart="(){if("+saveStore+".getState().GUI.showTitle||"+core+".sceneManager.sceneData.currentSentenceId===0||"+core+".sceneManager.lockSceneWrite)return;";
+   text=ReplaceOnce(text,autoSaveStart,"(){if(globalThis.__nativeAdapterInstalled===true)return;"+autoSaveStart.Substring(3));
    text=ReplaceOnce(text,observe+"=e=>{var n;",observe+"=e=>{globalThis.__nativeObserve?.(e);var n;");
    text=ReplaceOnce(text,next+"=()=>{"+core+".events.userInteractNext.emit()",next+"=()=>{if(globalThis.__nativeBeforeNext?.()===false)return;"+core+".events.userInteractNext.emit()");
    text=ReplaceOnce(text,core+".gameplay.autoTimeout=setTimeout("+autoCallback+",t)",core+".gameplay.autoTimeout=(globalThis.__nativeScheduleAuto??setTimeout)("+autoCallback+",t)");

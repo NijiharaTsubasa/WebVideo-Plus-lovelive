@@ -58,6 +58,8 @@
 
 并行数支持 1–32，但更多进程不一定更快。自动切点模式下，Planner 会按剧情安全点和 DOM workload 估算分配分片，且分片数不会超过有效 worker 数，避免额外 WebView2 冷启动。手动切点模式下，切点决定分片数，并行数只决定同时执行多少片。**1080p 是常规推荐档，1440p 适合需要更高输出分辨率的场景；4K 每帧像素量约为 1080p 的 4 倍，建议 2–4 worker。若原始背景、立绘或 Live2D 贴图本身不是 4K，通常不会获得更多真实细节。**
 
+时长分析和导出使用独立任务副本。副本禁用游戏自动存档，避免加速预演按游戏时间每秒复制当前状态与回溯记录、排队写入浏览器存储。原工程、编辑器预览和玩家正常游戏中的存档行为保持原样；导出器自己的任务快照、切段恢复与重试机制继续使用。原因、实测和复验步骤见[预演自动存档性能修复](AUTOSAVE-PLANNING.md)。
+
 ### 舞台图层导出
 
 “导出舞台”包含两个独立选项，默认都勾选：
@@ -214,5 +216,7 @@ React、Fluent UI、IconPark、TanStack Virtual、Zustand、Monaco Editor、Pixi
 特别感谢 **北风的猫5306**。作为最初参考的 WebGAL 助手提示词作者，其资料提供了角色与素材使用说明、脚本编写思路和高级演出特效参考。默认滤镜与预制效果中有一部分由这些公开资料整理、分类并做兼容性修正而来；原作者贡献不会因为本项目的界面封装而被改写。相关入口见 [webgal-skill 的 references](https://github.com/xxSak1xx/webgal-skill/tree/main/references) 及其[原始致谢说明](https://github.com/xxSak1xx/webgal-skill#声明)。
 
 也感谢提供滤镜资料、表格、基础角色映射，以及持续进行标准 Terre、MyGO 分发版和 Steam 版兼容性测试并逐项反馈问题的贡献者。
+
+感谢 [NijiharaTsubasa](https://github.com/NijiharaTsubasa)（WebGAL LoveLive 专版作者）定位 planning 阶段的自动存档性能热点，并提供禁用自动存档后加速的验证线索。
 
 Live2D 模型、角色图像、背景、音乐、配音等素材权利仍归各自权利人，本安装包不因此取得或转授这些素材的权利。更完整的第三方来源与许可说明见 [NOTICE.md](../NOTICE.md)、[LICENSES.md](../LICENSES.md) 和 [licenses/THIRD-PARTY.md](../licenses/THIRD-PARTY.md)。
