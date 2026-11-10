@@ -18,13 +18,13 @@ const WebVideoAnogo=(()=>{
    const response=await fetch(path,{signal:AbortSignal.timeout(5000)});
    return response.ok?response.json():null;
   }));
-  if(!configs.some(Boolean))return null;
+  if(!configs.every(config=>Array.isArray(config?.components)))return null;
   const components=configs.flatMap((config,index)=>(config?.components||[])
    .filter(component=>component?.type==='model'&&(paths.length===1||component.role===(index===0?'head':'body'))));
   const integrated=components.find(component=>component.role==='integrated');
   const face=integrated||components.find(component=>component.role==='head');
   const body=integrated||components.find(component=>component.role==='body');
-  if(!face||!body)return {motions:[],expressions:[]};
+  if(!face||!body)return null;
   const resources=await readResources();
   const motions=resources.filter(entry=>entry.type==='garupa-motion'||entry.type==='motion').map(entry=>entry.url?entry:entry.name);
   const expressions=[];
@@ -50,7 +50,11 @@ const WebVideoAnogo=(()=>{
  async function compile(input,model,characters,actions,useActions){const data=parse(input),lines=[],reviewRelative=[],warnings=[],templates=new Map(),catalogs=new Map();let offset=0;
   for(const row of model.statements)if(row.command==='changeFigure'&&row.content&&row.content!=='none'&&row.args.clear!==true&&row.args.id)templates.set(fold(row.args.id),row);
   const add=(code,pending)=>{if(pending)reviewRelative.push(offset);lines.push(code);offset+=code.length+1;};
-  let resourceRequest;
+  let resourceRequest,engineRequest;
+  const supportsGltf=()=>engineRequest??=(async()=>{
+   try{return JSON.parse(await WebVideoProject.read(WebVideoProject.projectPath('webgal-engine.json'),null))?.id==='webgal-lovelive.lovelive';}
+   catch{return false;}
+  })();
   const readResources=()=>resourceRequest??=(async()=>{
    const gameName=model.path.split('/')[1];
    const response=await fetch('/api/manageGame/updateGltfResourceCatalog',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gameName})});
@@ -61,7 +65,7 @@ const WebVideoAnogo=(()=>{
     .request('/api/shared/gltf-named',{}).catch(()=>[]);
    return local.concat(shared.map(entry=>({...entry,type:entry.type==='expression'?'garupa-expression':'motion'})));
   })().catch(()=>[]);
-  async function catalog(template){if(catalogs.has(template.content))return catalogs.get(template.content);let gltf;try{gltf=await readGltfOptions(template.content,readResources);}catch{gltf={motions:[],expressions:[]};}if(gltf){catalogs.set(template.content,gltf);return gltf;}if(!/\.jsonl?$/i.test(template.content)){const empty={motions:[],expressions:[]};catalogs.set(template.content,empty);return empty;}let motions=[],expressions=[];try{const file=WebVideoProject.projectPath('game/figure/'+C.safePath(template.content)),text=await WebVideoProject.read(file,null);if(text&&text.length<=4*1024*1024){let doc;try{doc=JSON.parse(text);}catch{for(const line of text.split(/\r?\n/)){try{const value=JSON.parse(line);if(value.motions||value.expressions||value.FileReferences){doc=value;break;}}catch{}}}if(doc){motions=Object.keys(doc.motions||doc.FileReferences?.Motions||{});expressions=(doc.expressions||doc.FileReferences?.Expressions||[]).map(item=>item.name||item.Name).filter(Boolean);}}}catch{}const result={motions,expressions};catalogs.set(template.content,result);return result;}
+  async function catalog(template){if(catalogs.has(template.content))return catalogs.get(template.content);let gltf;try{if(/(?:^|\/)config\.json$/i.test(template.content)&&await supportsGltf())gltf=await readGltfOptions(template.content,readResources);}catch{gltf=null;}if(gltf){catalogs.set(template.content,gltf);return gltf;}if(!/\.jsonl?$/i.test(template.content)){const empty={motions:[],expressions:[]};catalogs.set(template.content,empty);return empty;}let motions=[],expressions=[];try{const file=WebVideoProject.projectPath('game/figure/'+C.safePath(template.content)),text=await WebVideoProject.read(file,null);if(text&&text.length<=4*1024*1024){let doc;try{doc=JSON.parse(text);}catch{for(const line of text.split(/\r?\n/)){try{const value=JSON.parse(line);if(value.motions||value.expressions||value.FileReferences){doc=value;break;}}catch{}}}if(doc){motions=Object.keys(doc.motions||doc.FileReferences?.Motions||{});expressions=(doc.expressions||doc.FileReferences?.Expressions||[]).map(item=>item.name||item.Name).filter(Boolean);}}}catch{}const result={motions,expressions};catalogs.set(template.content,result);return result;}
   const pick=(items,key)=>{
    if(!key)return null;
    const name=item=>fold(item.name??item),value=item=>item.url??item;

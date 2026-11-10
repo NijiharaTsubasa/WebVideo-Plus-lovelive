@@ -16,7 +16,7 @@ function terre(version){
    const id=crypto.randomUUID(),file='games/'+body.project+'/.webvideo-plus/backups/music-'+id+'.json',createdAt=new Date().toISOString();put(file,JSON.stringify({schemaVersion:1,kind:'music',id,path:relative,createdAt,before:raw??'{"schemaVersion":2,"tracks":[]}'}));put(relative,JSON.stringify(body.music));return response({music:body.music,hash:crypto.createHash('sha256').update(fs.readFileSync(physical(relative))).digest('hex'),id,file,createdAt});
   }
   if(options?.method==='POST'){const body=JSON.parse(options.body);if(url.endsWith('/createNewFolder'))fs.mkdirSync(physical(body.source+'/'+body.name),{recursive:true});else if(url.endsWith('/createNewFile'))put(body.source+'/'+body.name,'');else if(url.endsWith('/editTextFile'))put(body.path,body.textFile);else throw Error('Unexpected endpoint');return {ok:true,status:200,text:async()=>'{}'};}
-  const file=decodeURIComponent(String(url).replace(/^\//,'').split('?')[0]),value=get(file);return {ok:value!==null,status:value===null?404:200,text:async()=>value};
+  const file=decodeURIComponent(String(url).replace(/^\//,'').split('?')[0]),value=get(file);return {ok:value!==null,status:value===null?404:200,text:async()=>value,json:async()=>JSON.parse(value)};
  }};ctx.window=ctx;vm.createContext(ctx);vm.runInContext('const bo=(o,k,v)=>(o[k]=v);'+bundle.slice(a,b)+';globalThis.nativeParse=parseScene;globalThis.types=commandType;',ctx);vm.runInContext(bundle.slice(c,d),ctx);
  for(const n of ['navigation-metadata','timeline-core','navigation-model','project-core','project-bridge','auto-exit','filter-helpers','expression-preparation','id-conversion','id-model-character','anogo-import-core','filter-edit'])vm.runInContext(fs.readFileSync(path.join(root,'browser/'+n+'.js'),'utf8'),ctx,{filename:n+'.js'});
  vm.runInContext('globalThis.A=WebVideoAutoExit;globalThis.E=webVideoExpressionPreparation;globalThis.EP=webVideoExpressionPlan;globalThis.Anogo=WebVideoAnogo;globalThis.FE=WebVideoFilterEdit;globalThis.F=WebVideoFilters;',ctx);
@@ -76,6 +76,7 @@ for(const version of versions){
  }finally{t.close();}});
  test(version+' Anogo resolves a composed 3D figure using head expressions and body motions',async()=>{
   const t=terre(version);try{
+   t.put('games/fixture/webgal-engine.json',JSON.stringify({id:'webgal-lovelive.lovelive'}));
    const put=(name,model)=>t.put('games/fixture/game/3d/figure/'+name+'/config.json',JSON.stringify({components:[{type:'model',...model}]}));
    put('head',{role:'head',model:'head.glb',expressionGroups:[{type:'face',states:[{name:'喜悦/笑'}]}]});
    put('body',{role:'body',model:'body.glb',motionGroup:'body-test'});
@@ -96,6 +97,7 @@ for(const version of versions){
  });
  test(version+' shared 3D figures provide character metadata and Anogo assets',async()=>{
   const t=terre(version);try{
+   t.put('games/fixture/webgal-engine.json',JSON.stringify({id:'webgal-lovelive.lovelive'}));
    const base='http://127.0.0.1:1234/webvideo-shared/'+'a'.repeat(32)+'/'+'b'.repeat(32)+'/';
    const figure=base+'3d_costume_1001103101/config.json',motion=base+'motion/stand.motionbin';
    const config={name:'花帆',components:[{type:'model',role:'integrated',name:'3d_costume_1001103101',expressionGroups:[{type:'face',states:[{name:'笑'}]}]}]};

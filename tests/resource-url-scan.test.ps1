@@ -11,6 +11,9 @@ try {
  if($canonical.Count -ne 1){throw 'Production canonical source extraction boundary changed'}
  # Any accidental attempt to probe the synthetic resource must fail explicitly.
  $core=$core.Substring(0,$end)+" public static class VideoWorkflow {$($canonical[0])}`n public static partial class App {public static readonly object LogLock=new object();}`n public static class Commands {public static Task<object> Probe(string file){throw new InvalidOperationException(`"Media probe is outside scanner/path resolution tests`");}}`n}`n"
+ # ProjectAssets also exposes timing placeholders; this scanner-only fixture
+ # must compile that entry without silently generating graphical assets.
+ $core += "`nnamespace NativeVideo {public static class LayerExport {public static void WriteTransparentImage(string file){throw new InvalidOperationException(`"Timing image generation is outside scanner/path resolution tests`");}}}`n"
  $corePath=Join-Path $temp 'Core.cs'
  [IO.File]::WriteAllText($corePath,$core,[Text.UTF8Encoding]::new($false))
  $resource=[IO.File]::ReadAllText((Join-Path $SourceRoot 'src/SharedResourceServer.cs'))

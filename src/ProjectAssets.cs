@@ -14,15 +14,18 @@ namespace NativeVideo {
 
   void CopyProjectResource(string file){
    if(!Files.Within(Project,file))throw new IOException("3D 资源路径超出工程目录");
+   SharedAssets.NoLinks(Project,file);
+   if(!File.Exists(file))throw new FileNotFoundException("找不到 3D 资源",file);
+   checkedFiles.Add(file);
    copies[Files.Under(Root,file.Substring(Project.TrimEnd('\\','/').Length+1))]=file;
   }
 
   void CopyGltfTree(string folder){
-   if(Directory.Exists(folder))foreach(var file in Directory.EnumerateFiles(folder,"*",SearchOption.AllDirectories))CopyProjectResource(file);
+   if(Directory.Exists(folder))foreach(var file in SharedAssets.FilesWithoutLinks(Project,folder))CopyProjectResource(file);
   }
 
-  void CollectLocalGltfNamed(string kind,string name,string libraryRoot=null){
-   if(string.IsNullOrEmpty(name)||External(name)||(kind=="expression"&&name.StartsWith("3d:",StringComparison.Ordinal)))return;
+  bool CollectLocalGltfNamed(string kind,string name,string libraryRoot=null,bool copy=true){
+   if(string.IsNullOrEmpty(name)||External(name)||(kind=="expression"&&name.StartsWith("3d:",StringComparison.Ordinal)))return false;
    var binary=name.EndsWith(".motionbin",StringComparison.Ordinal);
    var materialized=name.StartsWith(SharedAssets.Prefix,StringComparison.Ordinal);
    string[] paths;
@@ -37,9 +40,11 @@ namespace NativeVideo {
     if(!File.Exists(candidate))continue;
     var file=Files.Full(candidate);
     if(!Files.Within(root,file))continue;
-    CopyProjectResource(file);
-    break;
+    SharedAssets.NoLinks(Project,file);
+    if(copy)CopyProjectResource(file);
+    return true;
    }
+   return false;
   }
 
   string LocalGltfFile(string parent,string reference){
@@ -65,17 +70,41 @@ namespace NativeVideo {
    var relativeConfig=config.Substring(Path.Combine(Project,"game/3d").Length+1).Replace('\\','/');
    var sharedLibrary=Regex.Match(relativeConfig,@"^(figure/__shared/[^/]+)/");
    var libraryRoot=sharedLibrary.Success?sharedLibrary.Groups[1].Value:null;
-   foreach(var component in J.A(J.Get(J.Read(config),"components")).Where(c=>J.S(c,"type")=="model"&&(role==null||J.S(c,"role")==role))){
+   var components=J.A(J.Get(J.Read(config),"components")).Where(c=>J.S(c,"type")=="model"&&(role==null||J.S(c,"role")==role)).ToArray();
+   if(components.Length==0)throw new IOException("3D 模型包缺少所需组件："+(role??"model"));
+   var required=new HashSet<string>(StringComparer.Ordinal);
+   foreach(var component in components){
     if(J.S(component,"role")!="head"){
      var motion=J.S(component,"defaultMotion");
      if(motion.StartsWith("./",StringComparison.Ordinal)||motion.StartsWith("../",StringComparison.Ordinal)){
       var relative=LocalGltfFile(config,motion);
-      if(File.Exists(relative))CopyProjectResource(relative);
-      else CollectLocalGltfNamed("motion",motion);
-     }else CollectLocalGltfNamed("motion",motion,libraryRoot);
+      if(relative==null||!File.Exists(relative))throw new IOException("找不到默认动作："+motion);
+      CopyProjectResource(relative);
+     }else if(motion!=""&&!CollectLocalGltfNamed("motion",motion,libraryRoot))throw new IOException("找不到默认动作："+motion);
     }
     var model=LocalGltfFile(config,J.S(component,"model"));
-    if(File.Exists(model))CopyProjectResource(model);
+    if(model==null||!File.Exists(model))throw new IOException("找不到 3D 模型："+J.S(component,"model"));
+    CopyProjectResource(model);
+    CollectGltfRequirements(component,ReadGlbJson(model),required);
+   }
+   CheckGltfRequirements(required);
+  }
+  static void CollectGltfRequirements(object component,object document,HashSet<string> required){
+   var profile=J.S(component,"renderProfile");
+   if(profile!="")required.Add("render-profile:"+profile);
+   foreach(var behavior in J.A(J.Get(component,"behaviors")))
+    if(J.Get(behavior,"required")==null||J.B(behavior,"required"))required.Add("behavior:"+J.S(behavior,"name"));
+   foreach(var material in J.A(J.Get(document,"materials"))){
+    var shader=J.S(J.Get(material,"extras"),"shader");
+    if(shader!="")required.Add("shader:"+shader);
+   }
+  }
+  void CheckGltfRequirements(IEnumerable<string> required){
+   foreach(var dependency in required){
+    string[] files;
+    if(!GltfRuntime().TryGetValue(dependency,out files)||files.Any(file=>!File.Exists(file)))
+     throw new IOException("当前工程缺少 3D 运行时依赖："+dependency);
+    foreach(var file in files)SharedAssets.NoLinks(Project,file);
    }
   }
   Dictionary<string,string[]> gltfRuntime;
@@ -83,6 +112,7 @@ namespace NativeVideo {
    if(gltfRuntime!=null)return gltfRuntime;
    var entries=new Dictionary<string,string[]>(StringComparer.Ordinal);
    var root=Path.Combine(Project,"game/3d/runtime");
+   SharedAssets.NoLinks(Project,Path.Combine(root,"index.json"));
    var index=J.TryRead(Path.Combine(root,"index.json"));
    foreach(var path in J.A(J.Get(index,"packages"))){
     var file=Files.Under(root,Convert.ToString(path));
@@ -108,7 +138,9 @@ namespace NativeVideo {
      dependencies.Add(file);
     };
     var required=new HashSet<string>(StringComparer.Ordinal);
-    foreach(var component in J.A(J.Get(J.Read(config),"components")).Where(c=>J.S(c,"type")=="model"&&(role==null||J.S(c,"role")==role))){
+    var components=J.A(J.Get(J.Read(config),"components")).Where(c=>J.S(c,"type")=="model"&&(role==null||J.S(c,"role")==role)).ToArray();
+    if(components.Length==0)throw new IOException("3D 模型包缺少所需组件："+(role??"model"));
+    foreach(var component in components){
      if(J.S(component,"role")!="head"){
       var defaultMotion=J.S(component,"defaultMotion");
       var relative=defaultMotion.StartsWith("./",StringComparison.Ordinal)||defaultMotion.StartsWith("../",StringComparison.Ordinal);
@@ -121,28 +153,16 @@ namespace NativeVideo {
        var stagedConfig=Files.Under(Path.Combine(Root,"game/3d/figure"),reference);
        var stagedMotion=Files.Under(Path.Combine(Root,"game/3d/figure"),motion);
        copiedDefaultMotions[stagedConfig]=stagedMotion;
-      }else if(!relative&&collectLocalGltf)CollectLocalGltfNamed("motion",defaultMotion);
+      }else if(!relative&&defaultMotion!=""&&!CollectLocalGltfNamed("motion",defaultMotion,null,collectLocalGltf))throw new IOException("找不到默认动作："+defaultMotion);
      }
-     var profile=J.S(component,"renderProfile");
-     if(profile!="")required.Add("render-profile:"+profile);
-     foreach(var behavior in J.A(J.Get(component,"behaviors")))
-      if(J.Get(behavior,"required")==null||J.B(behavior,"required"))required.Add("behavior:"+J.S(behavior,"name"));
      var model=J.S(component,"model");
+     if(string.IsNullOrWhiteSpace(model))throw new IOException("3D 模型组件缺少 model 路径");
      collect(config,model);
      var glb=Files.Full(Path.Combine(Path.GetDirectoryName(config),PhysicalName(model)));
      if(!dependencies.Contains(glb))continue;
-     var document=ReadGlbJson(glb);
-     foreach(var material in J.A(J.Get(document,"materials"))){
-      var shader=J.S(J.Get(material,"extras"),"shader");
-      if(shader!="")required.Add("shader:"+shader);
-     }
+     CollectGltfRequirements(component,ReadGlbJson(glb),required);
     }
-    foreach(var dependency in required){
-     string[] files;
-     if(!GltfRuntime().TryGetValue(dependency,out files)||files.Any(file=>!File.Exists(file)))
-      throw new IOException("当前工程缺少 3D 运行时依赖："+dependency);
-     foreach(var file in files)SharedAssets.NoLinks(Project,file);
-    }
+    CheckGltfRequirements(required);
     var segments=reference.Split(new[]{'/'},StringSplitOptions.RemoveEmptyEntries);
     var libraryRoot=Files.Under(Path.Combine(Root,"game/3d/figure"),string.Join("/",segments.Take(2)));
     var sourceRoot=config;

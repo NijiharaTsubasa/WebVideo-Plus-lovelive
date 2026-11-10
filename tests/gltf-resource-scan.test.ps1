@@ -1,0 +1,37 @@
+# Compile and execute actual C# scanner/path resolution, without WebView2/FFmpeg.
+param([string]$SourceRoot=(Split-Path $PSScriptRoot -Parent))
+$ErrorActionPreference='Stop'
+$temp=Join-Path ([IO.Path]::GetTempPath()) ('webvideo-resource-scan-source-'+[Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $temp | Out-Null
+try {
+ $core=[IO.File]::ReadAllText((Join-Path $SourceRoot 'src/Core.cs'))
+ $end=$core.IndexOf(' public static class WorkCache {')
+ if($end -lt 0){throw 'Production core extraction boundary changed'}
+ $canonical=@([IO.File]::ReadAllLines((Join-Path $SourceRoot 'src/VideoWorkflow.cs')) | Where-Object {$_ -match '^  public static string CanonicalSource\('})
+ if($canonical.Count -ne 1){throw 'Production canonical source extraction boundary changed'}
+ # Any accidental attempt to probe the synthetic resource must fail explicitly.
+ $core=$core.Substring(0,$end)+" public static class VideoWorkflow {$($canonical[0])}`n public static partial class App {public static readonly object LogLock=new object();}`n public static class Commands {public static Task<object> Probe(string file){throw new InvalidOperationException(`"Media probe is outside scanner/path resolution tests`");}}`n}`n"
+ $corePath=Join-Path $temp 'Core.cs'
+ [IO.File]::WriteAllText($corePath,$core,[Text.UTF8Encoding]::new($false))
+ $resource=[IO.File]::ReadAllText((Join-Path $SourceRoot 'src/SharedResourceServer.cs'))
+ $resourceEnd=$resource.IndexOf(' public sealed class SharedResourceServer:')
+ if($resourceEnd -lt 0){throw 'Shared resource helper extraction boundary changed'}
+ $resourcePath=Join-Path $temp 'SharedResourceHelpers.cs'
+ [IO.File]::WriteAllText($resourcePath,$resource.Substring(0,$resourceEnd)+"}`n",[Text.UTF8Encoding]::new($false))
+ $sources=@($corePath,(Join-Path $SourceRoot 'src/EngineAdapter.cs'),(Join-Path $SourceRoot 'src/ProjectAssets.cs'),(Join-Path $SourceRoot 'src/SharedAssets.cs'),$resourcePath,(Join-Path $SourceRoot 'src/SceneChain.cs'),(Join-Path $SourceRoot 'tests/resource-url.portable-json.cs'),(Join-Path $PSScriptRoot 'GltfResourceScanChecks.cs'))
+ Add-Type -Path $sources
+ $previousJunction=$env:WEBVIDEO_GLTF_JUNCTION
+ $junction=Join-Path $temp 'junction'
+ $target=Join-Path $temp 'junction-target'
+ New-Item -ItemType Directory -Path $target | Out-Null
+ [IO.File]::WriteAllText((Join-Path $target 'must-not-read.txt'),'fixture')
+ New-Item -ItemType Junction -Path $junction -Target $target | Out-Null
+ try {
+  $env:WEBVIDEO_GLTF_JUNCTION=$junction
+  $count=[GltfResourceScanChecks]::Run()
+ }finally{
+  $env:WEBVIDEO_GLTF_JUNCTION=$previousJunction
+  [IO.Directory]::Delete($junction)
+ }
+ Write-Output "PASS $count production C# glTF resource preflight checks"
+}finally{if(-not([IO.Path]::GetFullPath($temp).StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()),[StringComparison]::OrdinalIgnoreCase))){throw 'Unexpected scanner test cleanup path'};Remove-Item -LiteralPath $temp -Recurse -Force}

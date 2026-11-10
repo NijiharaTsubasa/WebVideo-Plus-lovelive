@@ -44,6 +44,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Update and atlas checks failed" }
           .\tests\build-inputs.test.ps1
           .\tests\manual-cuts.test.ps1
+          pwsh -NoLogo -NoProfile -File ./tests/gltf-resource-scan.test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "LoveLive resource preflight checks failed" }
           pwsh -NoLogo -NoProfile -File ./tests/scene-only-tail.test.ps1 -Fixtures .build/scene-only-tail-fixtures.json
           if ($LASTEXITCODE -ne 0) { throw "Scene-only tail production checks failed" }
 
@@ -107,6 +109,8 @@ jobs:
           $archive = Get-PinnedBuildInput $lock.ffmpegTest (Join-Path $PWD '.build/downloads')
           Expand-CheckedBuildArchive $archive (Join-Path $PWD '.build/ffmpeg-test')
           $env:PATH = (Join-Path $PWD ('.build/ffmpeg-test/' + $lock.ffmpegTest.archiveRoot + '/bin')) + ';' + $env:PATH
+          node tests/audio-loop-ffmpeg.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Tagged audio loop sample-clock checks failed" }
           .\tests\font-render-native.ps1
 
       - name: Restore locked optional AI dependencies

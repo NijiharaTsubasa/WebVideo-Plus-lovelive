@@ -71,6 +71,13 @@ const webVideoGarupaCharacters={
 async function webVideoReadModelCharacters(game,model){
  const references=[...new Set(model.statements.filter(row=>row.command==='changeFigure').map(row=>row.content))];
  const names=new Map();
+ if(!references.some(reference=>/(?:^|\/)config\.json$/i.test(reference)))return names;
+ // A Live2D config.json can have the same relative name as a 3D package.
+ // Only the selected project's engine determines which namespace is active.
+ try{
+  const response=await fetch('/games/'+encodeURIComponent(game)+'/webgal-engine.json',{signal:AbortSignal.timeout(5000)});
+  if(!response.ok||(await response.json())?.id!=='webgal-lovelive.lovelive')return names;
+ }catch{return names;}
  async function read(reference){
   const path=reference?.split(/(?<=config\.json)\+/)[0];
   if(!path?.endsWith('/config.json')&&path!=='config.json')return;

@@ -13,7 +13,7 @@ if($LASTEXITCODE -ne 0){throw 'Project resource production source compilation fa
 Get-ChildItem -LiteralPath $taskPackage -Filter '*.dll'|Copy-Item -Destination $taskRun
 $taskChecks=Join-Path $taskRun ProjectResourceChecks.exe
 Copy-Item (Join-Path $taskPackage WebGAL.Video.exe.config) ($taskChecks+'.config')
-& $taskCompiler /nologo /target:exe /platform:x64 ('/out:'+$taskChecks) ('/r:'+$taskNative) /r:System.Web.Extensions.dll /r:System.Net.Http.dll (Join-Path $PSScriptRoot ProjectResourceChecks.cs)
+& $taskCompiler /nologo /target:exe /platform:x64 ('/win32manifest:'+(Join-Path $taskRepo 'native.manifest')) ('/out:'+$taskChecks) ('/r:'+$taskNative) /r:System.Web.Extensions.dll /r:System.Net.Http.dll (Join-Path $PSScriptRoot ProjectResourceChecks.cs)
 if($LASTEXITCODE -ne 0){throw 'Project resource test compilation failed'}
 & $taskChecks (Join-Path $taskRun fixture) @OfficialEngineRoots *> (Join-Path $taskRun checks.log)
 $taskExit=$LASTEXITCODE

@@ -29,7 +29,9 @@ function audioMixArguments(tracks,durationSeconds,muteWindows=[]) {
       const start=Math.round(points.start*48000),end=Math.round(points.end*48000);
       // FFmpeg has already removed Opus pre-skip. Repeat decoded PCM only;
       // seeking is applied after the intro/loop sequence has been assembled.
-      filter=`[${i}:a]aresample=48000,asetpts=N/SR/TB,atrim=end_sample=${end},aloop=loop=-1:size=${end-start}:start=${start},atrim=start=${Math.max(0,a.sourceOffsetMs||0)/1000}:duration=${length},asetpts=N/SR/TB,volume=${a.volume}`;
+      // aloop can leave frame-sized timestamp gaps. Rebuild the sample clock
+      // before time-based trimming, or apad masks missing samples as a silent tail.
+      filter=`[${i}:a]aresample=48000,asetpts=N/SR/TB,atrim=end_sample=${end},aloop=loop=-1:size=${end-start}:start=${start},asetpts=N/SR/TB,atrim=start=${Math.max(0,a.sourceOffsetMs||0)/1000}:duration=${length},asetpts=N/SR/TB,volume=${a.volume}`;
     }else{
       if(a.loop)input.push('-stream_loop','-1');if(a.sourceOffsetMs)input.push('-ss',String(a.sourceOffsetMs/1000));input.push('-t',String(length),'-i',a.path);
       filter=`[${i}:a]atrim=duration=${length},asetpts=PTS-STARTPTS,volume=${a.volume}`;

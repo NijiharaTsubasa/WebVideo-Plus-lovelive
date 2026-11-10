@@ -80,7 +80,7 @@ function installStageAssetBarrier() {
   });
  };
  globalThis.__exportWaitForStageAssets=async()=>{
-  await __exportWaitForGltf();
+  if(globalThis.__wgProbe?.adapter?.id==='lovelive')await __exportWaitForGltf();
   const stage=__wgProbe.core.gameplay.pixiStage;
   const missing=()=>[...stage.backgroundObjects,...stage.figureObjects].filter(object=>{
    if(!object.sourceUrl)return false;

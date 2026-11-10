@@ -37,7 +37,7 @@ namespace NativeVideo {
    html=Regex.Replace(html,@"<(?<tag>[A-Za-z][A-Za-z0-9:-]*)\b[^>]*>",tag=>Regex.Replace(tag.Value,"(?<attribute>(?<name>src|href)\\s*=\\s*[\"'])(?<path>[^\"']+)(?<quote>[\"'])",m=>{if(m.Groups["name"].Value.Equals("href",StringComparison.OrdinalIgnoreCase)&&!tag.Groups["tag"].Value.Equals("link",StringComparison.OrdinalIgnoreCase))return m.Value;string value=m.Groups["path"].Value;if(Regex.IsMatch(value,@"^(?:https?:|//|file:)",RegexOptions.IgnoreCase))throw new IOException("引擎入口包含外部资源地址，请使用本机完整引擎");if(value.StartsWith("#")||value.StartsWith("data:"))return m.Value;string name=value.TrimStart('.','/');if(!new[]{"assets/","icons/","lib/","manifest.json","webgal-engine.json"}.Any(name.StartsWith))return m.Value;return m.Groups["attribute"].Value+baseUrl+name+m.Groups["quote"].Value;},RegexOptions.IgnoreCase),RegexOptions.IgnoreCase);
    html=Regex.Replace(html,"(?<quote>[\"'])(?<path>(?:\\./)?lib/[^\"']+)\\k<quote>",m=>m.Groups["quote"].Value+baseUrl+m.Groups["path"].Value.TrimStart('.','/')+m.Groups["quote"].Value);return html;
   }
-  public static void CopyShell(string root,string target){foreach(string name in new[]{"assets","icons"})if(Directory.Exists(Path.Combine(root,name)))Files.CopyTree(Path.Combine(root,name),Path.Combine(target,name));string libraries=Path.Combine(root,"lib");if(Directory.Exists(libraries))foreach(string file in Directory.GetFiles(libraries,"*",SearchOption.AllDirectories)){SharedAssets.NoLinks(libraries,file);string copy=Files.Under(Path.Combine(target,"lib"),file.Substring(libraries.Length+1));if(!File.Exists(copy))Files.CopyFile(file,copy);}foreach(string name in new[]{"index.html","manifest.json","webgal-engine.json","webgal-serviceworker.js"})if(File.Exists(Path.Combine(root,name)))Files.CopyFile(Path.Combine(root,name),Path.Combine(target,name));}
+  public static void CopyShell(string root,string target){foreach(string name in new[]{"assets","icons"})if(Directory.Exists(Path.Combine(root,name)))Files.CopyTree(Path.Combine(root,name),Path.Combine(target,name));string libraries=Path.Combine(root,"lib");if(Directory.Exists(libraries))foreach(string file in SharedAssets.FilesWithoutLinks(root,libraries)){SharedAssets.NoLinks(libraries,file);string copy=Files.Under(Path.Combine(target,"lib"),file.Substring(libraries.Length+1));if(!File.Exists(copy))Files.CopyFile(file,copy);}foreach(string name in new[]{"index.html","manifest.json","webgal-engine.json","webgal-serviceworker.js"})if(File.Exists(Path.Combine(root,name)))Files.CopyFile(Path.Combine(root,name),Path.Combine(target,name));}
   public static string DirectoryName(string value){return Name(value);}
  }
  public sealed partial class QueueService {
@@ -69,7 +69,7 @@ namespace NativeVideo {
      if(skip&&omit.Contains(part)||part=="template"&&!J.B(data,"ignoreTemplate"))continue;
      if(skip&&part=="3d"&&EngineAdapter.IsLoveLiveProject(source)){
       string runtime=Path.Combine(folder,"runtime");
-      if(Directory.Exists(runtime))Files.CopyTree(runtime,Path.Combine(game,"3d/runtime"));
+      if(Directory.Exists(runtime))foreach(var file in SharedAssets.FilesWithoutLinks(source,runtime))Files.CopyFile(file,Files.Under(Path.Combine(game,"3d/runtime"),file.Substring(runtime.Length+1)));
       continue;
      }
      Files.CopyTree(folder,Path.Combine(game,part));

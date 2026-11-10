@@ -3,6 +3,12 @@ namespace NativeVideo {
  public sealed partial class SharedAssets {
   public static readonly string[] Kinds={"figure","background","bgm","vocal","video"};
   public const string Prefix="__shared/";
+  internal static IEnumerable<string> FilesWithoutLinks(string root,string folder){
+   NoLinks(root,folder);
+   foreach(var file in Directory.GetFiles(folder)){NoLinks(root,file);yield return file;}
+   foreach(var child in Directory.GetDirectories(folder))
+    foreach(var file in FilesWithoutLinks(root,child))yield return file;
+  }
   internal string FindDefaultMotion(string modelReference,string name){
    if(string.IsNullOrWhiteSpace(name)||Regex.IsMatch(name,@"^(?:[a-z][a-z\d+.-]*:|[/\\])",RegexOptions.IgnoreCase))return null;
    var id=modelReference.Substring(Prefix.Length).Split('/')[0];

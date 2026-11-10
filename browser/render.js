@@ -749,7 +749,7 @@ globalThis.__installNativeRendering=({events,envelopes,fps,firstSimulationFrame=
 globalThis.__stepExportFrame=async({t,elapsed,batch,lips})=>{
   globalThis.__exportCurrentSimulationMs=Number(t)||0;
   // Queue timestamps and motion phase must describe the same (already advanced) frame.
-  await __exportWaitForGltf();
+  if(globalThis.__wgProbe?.adapter?.id==='lovelive')await __exportWaitForGltf();
   if(elapsed>0)await __pwClock.controller.runFor(elapsed);
   if(live2dBindingPending){await bindLive2DDeterminism();live2dBindingPending=false;}
   for(let i=0;i<batch.length;){
@@ -765,7 +765,7 @@ globalThis.__stepExportFrame=async({t,elapsed,batch,lips})=>{
     }
   }
   if(batch.length)await __pwClock.controller.runFor(0);
-  await __exportWaitForGltf();
+  if(globalThis.__wgProbe?.adapter?.id==='lovelive')await __exportWaitForGltf();
   if(globalThis.__exportDialoguePending){
     await globalThis.__exportWaitDialogueDom();
     globalThis.__exportFinishDialogueTransition();
