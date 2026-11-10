@@ -217,6 +217,7 @@ namespace NativeVideo {
    if(IsMygo&&strictMygoHash&&Files.Hash(file)!=MygoHash)throw new IOException("MyGO 文件在准备过程中改变，请重新导出");
    string text=File.ReadAllText(file);
    if(IsLoveLive) {
+    LoveLiveResourceTimers.Prepare(root,Bundle,text);
     string html=Path.Combine(root,"index.html");
     string script=File.ReadAllText(Path.Combine(Files.Root,"browser/lovelive-export-host.js"));
     Files.Atomic(html,ReplaceOnce(File.ReadAllText(html),"<head>","<head><script>"+script+"</script>"));

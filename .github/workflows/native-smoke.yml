@@ -46,6 +46,8 @@ jobs:
           .\tests\manual-cuts.test.ps1
           pwsh -NoLogo -NoProfile -File ./tests/gltf-resource-scan.test.ps1
           if ($LASTEXITCODE -ne 0) { throw "LoveLive resource preflight checks failed" }
+          pwsh -NoLogo -NoProfile -File ./tests/lovelive-resource-timers.test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "LoveLive offline resource timer contract failed" }
           pwsh -NoLogo -NoProfile -File ./tests/scene-only-tail.test.ps1 -Fixtures .build/scene-only-tail-fixtures.json
           if ($LASTEXITCODE -ne 0) { throw "Scene-only tail production checks failed" }
 
