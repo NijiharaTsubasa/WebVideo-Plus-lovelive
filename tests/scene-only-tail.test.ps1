@@ -28,7 +28,7 @@ try {
   if($resourceEnd -lt 0){throw 'Shared resource extraction boundary changed'}
   $resourcePath=Join-Path $temp 'SharedResourceHelpers.cs';[IO.File]::WriteAllText($resourcePath,$resource.Substring(0,$resourceEnd)+"}`n",[Text.UTF8Encoding]::new($false));$sources+=$resourcePath
  }
- foreach($name in @('EngineAdapter','WebgalEngineProfile','ProjectAssets','SharedAssets','VideoWorkflow','SegmentPlan','ManualCuts','StatementCuts')){if(Test-Path (Join-Path $root "src/$name.cs")){$sources+=Join-Path $root "src/$name.cs"}}
+ foreach($name in @('EngineAdapter','LoveLiveResourceTimers','WebgalEngineProfile','ProjectAssets','SharedAssets','VideoWorkflow','SegmentPlan','ManualCuts','StatementCuts')){if(Test-Path (Join-Path $root "src/$name.cs")){$sources+=Join-Path $root "src/$name.cs"}}
  Add-Type -Path $sources
  $count=[NativeVideo.SceneOnlyTailChecks]::Run($temp,$Fixtures)
  Write-Output "PASS $count production C# scene-only tail checks (no graphics host)"

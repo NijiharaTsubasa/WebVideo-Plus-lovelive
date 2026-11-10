@@ -13,3 +13,9 @@ Validation:
 - Independent code review completed before finalizing this change.
 
 Real-model export with the repaired candidate is still pending. Unit/contract results do not establish successful MP4 output or final timing/visual parity. No release artifact was built as part of these checks.
+
+## Follow-up: isolated test compilation lists
+
+CI run 42778603842 at b4212502 failed because the glTF scanner's explicit Add-Type source list omitted the new LoveLiveResourceTimers dependency. The same omission was corrected in resource-url-scan and scene-only-tail. Other adapter references use all source files, a precompiled assembly, or a test stub and do not need this dependency added.
+
+Local offline checks after the list-only fix: glTF preflight 22 passed; resource Scan/Resolve 114 passed; scene-only tail 97 passed. No graphics host was started. Production source and browser bytes are unchanged from b4212502; an artifact built from that commit remains labeled with that original build source SHA. The prior CI failure is not a pass, and real-model export remains pending.

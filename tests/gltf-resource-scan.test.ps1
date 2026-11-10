@@ -18,7 +18,7 @@ try {
  if($resourceEnd -lt 0){throw 'Shared resource helper extraction boundary changed'}
  $resourcePath=Join-Path $temp 'SharedResourceHelpers.cs'
  [IO.File]::WriteAllText($resourcePath,$resource.Substring(0,$resourceEnd)+"}`n",[Text.UTF8Encoding]::new($false))
- $sources=@($corePath,(Join-Path $SourceRoot 'src/EngineAdapter.cs'),(Join-Path $SourceRoot 'src/ProjectAssets.cs'),(Join-Path $SourceRoot 'src/SharedAssets.cs'),$resourcePath,(Join-Path $SourceRoot 'src/SceneChain.cs'),(Join-Path $SourceRoot 'tests/resource-url.portable-json.cs'),(Join-Path $PSScriptRoot 'GltfResourceScanChecks.cs'))
+ $sources=@($corePath,(Join-Path $SourceRoot 'src/EngineAdapter.cs'),(Join-Path $SourceRoot 'src/LoveLiveResourceTimers.cs'),(Join-Path $SourceRoot 'src/ProjectAssets.cs'),(Join-Path $SourceRoot 'src/SharedAssets.cs'),$resourcePath,(Join-Path $SourceRoot 'src/SceneChain.cs'),(Join-Path $SourceRoot 'tests/resource-url.portable-json.cs'),(Join-Path $PSScriptRoot 'GltfResourceScanChecks.cs'))
  Add-Type -Path $sources
  $previousJunction=$env:WEBVIDEO_GLTF_JUNCTION
  $junction=Join-Path $temp 'junction'
