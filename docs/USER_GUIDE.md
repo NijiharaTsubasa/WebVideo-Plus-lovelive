@@ -4,7 +4,7 @@
 
 [本版安装包与验收](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.17) · [1.1.17 发行说明](releases/RELEASE_NOTES_1.1.17.md) · [版本记录](../CHANGELOG.md) · [构建说明](BUILDING.md) · [MPL-2.0](../LICENSE) · [许可范围](../LICENSES.md) · [来源与许可](../NOTICE.md)
 
-**当前源码版本：1.1.17（内部开发标识 0.8.16；安装器 Win32 版本 1.1.17.0，导出内核 0.6.66）。** 本版安装包、校验值与最终验收见[1.1.17 发布页](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.17)。发布页公开前无法下载，不把源码版本号当作安装器已上线的证明。此前 [1.1.16](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16) 作为历史记录保留。
+**当前源码版本：1.1.17（内部开发标识 0.8.16；安装器 Win32 版本 1.1.17.0，导出内核 0.6.66）。** 本版安装包及发行资产 SHA-256（digest）见[1.1.17 发布页](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.17)。已于 2026-11-10 发布。此前 [1.1.16](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16) 作为历史记录保留。
 
 当前适配基线为 **Terre 4.6.4**；对前端被重新打包但挂载语义未变化的 4.6.4 变体，会使用结构锚点检查而不是要求整份前端 bundle 哈希完全一致。
 
@@ -145,7 +145,7 @@ Key 通过 Windows 当前用户 DPAPI 加密，存于所选 **WebVideo+ 数据�
 
 ## 安装与模块管理
 
-1. 从 [GitHub Releases](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.16) 下载最新的 `WebVideo+-Setup-*.exe`。
+1. 从 [GitHub Releases](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.17) 下载本版的 `WebVideo+-Setup-*.exe`。
 2. 运行安装器并选择已有 **Terre 4.6.4** 安装目录。
 3. 默认安装常用模块；在高级选项中可单独增删功能，并可选择 WebVideo+ 数据目录、导出工作缓存、安装缓存以及是否保留长期 Terre 恢复备份。灰选项目表示其他已选模块所需依赖。
 4. 完成后照常启动 Terre。

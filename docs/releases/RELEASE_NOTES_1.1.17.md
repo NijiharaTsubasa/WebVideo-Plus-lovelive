@@ -1,7 +1,11 @@
 <!-- webvideo-compat: {"product":"terre","webgal":["4.6.4"]} -->
 # WebVideo+ Terre 1.1.17
 
-状态：未发布候选。适用 Terre / WebGAL 4.6.4、MyGO 3.2.1，并新增本线的 WebGAL LoveLive 接入。产品 1.1.17，安装器 1.1.17.0，导出内核 0.6.66，内部开发标识 0.8.16。本页汇总相对已公开 1.1.16 的改动；CI 成功不表示 Release、标签、下载资产或更新通道已经公开。
+状态：已于 2026-11-10 发布：[v1.1.17](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/v1.1.17)。适用 Terre / WebGAL 4.6.4、MyGO 3.2.1，并新增本线的 WebGAL LoveLive 接入。产品 1.1.17，安装器 1.1.17.0，导出内核 0.6.66，内部开发标识 0.8.16。本页汇总相对已公开 1.1.16 的改动。
+
+## 正式包验证
+
+[正式包 QA CI](https://github.com/Stakataka-3030/WebVideo-Plus/actions/runs/42786911626) 通过。最终稳定安装器已完成 LoveLive 安装恢复、双真实模型与 BGM 短片导出核验。下方候选验收保留为发布前历史记录。
 
 ## LoveLive 接入与修复
 
@@ -23,9 +27,9 @@
 - 便携安装位于默认收起的高级设置，默认关闭；保留常规安装、便携路径迁移与已安装模式锁。普通及便携安装均写入当前 runtime-session，FFmpeg 更新有界重试并可恢复旧工具。
 - 新工程首次保存及空备份列表遇到 Nest 缺目录 500 时，先通过父目录 `dirInfo/isDir` 严格证明缺失。权限、畸形响应、文件占位和并发冲突仍拒绝操作，不吞未知错误。
 
-## 验证范围
+## 发布前验证记录
 
-详见[1.1.17 候选验收](../verification/terre-1.1.17-candidate-20261110.md)，各候选与实际文件分列。
+详见[1.1.17 发布前验收记录](../verification/terre-1.1.17-candidate-20261110.md)，各候选与实际文件分列。
 
 | 项目 | 结果与范围 |
 | --- | --- |
@@ -38,7 +42,7 @@
 
 LL 实测包为 `dist/WebVideo+-Setup-0.8.16-dev.exe`，97,357,824 字节，SHA-256 `84de89d14bebd1102a19dc1d26b17223ae3046f0cbb8e7a9a0e1ed4a08418549`，构建源码 `b4212502ab30b6437e1353f2be2c5cfaf78426e9`。`8680cfdb` 仅变更三份测试编译清单与文档，生产差异为空；不能将旧包改称由新 SHA 构建。
 
-CI 保留的稳定通道安装器为 `WebVideo+-Setup-1.1.17.exe`，载荷身份记录 SHA-256 `b25beafc1d0b70ecca474f70ee8c556438d43c99f42d158ef84ec25d34f80ad9`。其 scene-tail 载荷核验不等同于该 EXE 的真实 LL 安装与运行验收，最终发行资产仍需取回、核验并记录。
+CI 保留的稳定通道安装器为 `WebVideo+-Setup-1.1.17.exe`，载荷身份记录 SHA-256 `b25beafc1d0b70ecca474f70ee8c556438d43c99f42d158ef84ec25d34f80ad9`。其 scene-tail 载荷核验不等同于该 EXE 的真实 LL 安装与运行验收，本段保留发布前包记录，公开安装器见页首发行链接。
 
 ## 保留的边界
 
