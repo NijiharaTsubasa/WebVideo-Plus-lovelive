@@ -1,41 +1,53 @@
 <!-- webvideo-compat: {"product":"terre","webgal":["4.6.4"]} -->
-# WebVideo+ 1.1.17
+# WebVideo+ Terre 1.1.17
 
-适用：Terre / WebGAL 4.6.4、MyGO 3.2.1。安装器 1.1.17.0，导出内核 0.6.66。本页记录源码改动和验证边界，最终发行包结果单独记录。
+状态：未发布候选。适用 Terre / WebGAL 4.6.4、MyGO 3.2.1，并新增本线的 WebGAL LoveLive 接入。产品 1.1.17，安装器 1.1.17.0，导出内核 0.6.66，内部开发标识 0.8.16。本页汇总相对已公开 1.1.16 的改动；CI 成功不表示 Release、标签、下载资产或更新通道已经公开。
 
-## 本次改动
+## LoveLive 接入与修复
 
-- 修复导出副本中已请求 Live2D 表情跨 await / destroy 的生命周期问题，只等待当前请求，不等待全量预取完成、不固定 sleep；真实 20 秒超时明确报错，失败缓存再次请求时不漏报，保留原生重试。详见[表情安全说明](../LIVE2D-EXPRESSION-SAFETY.md)。
-- 导出任务副本跳过游戏自动快速存档，减少复制回溯记录和排队写入存储的开销。原工程、正常游戏自动存档与手动存档保留。详见[自动存档修复](../AUTOSAVE-PLANNING.md)。
-- 视频、舞台、对话框、音轨和 SRT 五类弹窗打开时仅被动查看现有预览状态，不自动重开预览，也不把默认速度标为实时读取。明确重读或真正提交时仍读取实际设置；需要打开预览前在顶部显示告知。关闭弹窗或切换项目后丢弃旧异步状态，POST 前失效不入队；已经发出的 POST 不承诺取消。
-- “仅本场景”（sceneOnly）在满足条件时保留全部前文与目标场景，用合成注释标记在目标边界结束 planning，不执行 end 清场；在资源扫描、快照复制和媒体准备前裁去后文，第二次导航的实际预演与 GPU lookahead 不再接收被省略的后文。前文恢复、预热和锚点架构保持不变。详见[sceneOnly 尾部边界](../scene-only-tail.md)。
+- 整合 [PR #34](https://github.com/Stakataka-3030/WebVideo-Plus/pull/34) 的 LoveLive 适配，保留原作者提交及合并历史。贯通引擎识别、工程创建、3D 模型/动作读取、共享资源、依赖扫描与导出准备；支持实际使用的单 GLB 与 head/body 组合角色。普通 WebGAL / MyGO 不进入 LL 专属 glTF 帧等待。
+- 角色读取仅在 LoveLive 工程中探测 3D 配置，失败时保留 Live2D 回退。预检明确报告缺失模型、非空默认动作、render profile、behavior 或 shader；只检查组合角色选中的 head/body，共享动作仍可回退到工程本地。资源递归在进入链接目录前拒绝操作。
+- 修复真实 LL 模型在 planning 的 glTF 就绪屏障等待超时：只在任务副本实际导入的 offscreen-character 模块中，将一个 16 ms 准备 yield 和两个 10 ms shader poll 改用真实资源计时器。未知、歧义或重复补丁形态拒绝；不改原工程、剧情时钟、就绪条件或 120 秒超时。详见[资源计时修复](../verification/lovelive-resource-timers.md)。
 
-感谢 [NijiharaTsubasa](https://github.com/NijiharaTsubasa) 提供 planning 阶段自动存档性能热点的反馈及禁用后加速的验证线索。
+## 导出与编辑
 
-## sceneOnly 的适用边界
+- 修复导出副本中已请求 Live2D 表情跨 await / destroy 的生命周期问题，只等待当前请求，不等待全量预取完成、不固定 sleep；真实 20 秒超时明确报错，保留失败缓存重选与原生重试。详见[表情安全说明](../LIVE2D-EXPRESSION-SAFETY.md)。
+- 导出任务副本跳过游戏自动快速存档，正常游戏与手动存档保留。详见[自动存档修复](../AUTOSAVE-PLANNING.md)。
+- 视频、舞台、对话框、音轨和 SRT 五类弹窗打开时仅被动查看现有预览状态，不自动重开预览；明确重读或真正提交时仍读取实际设置，需要打开预览前显示告知。关闭弹窗或切换项目后丢弃旧异步状态，POST 前失效不入队；已发出的 POST 不承诺取消。
+- “仅本场景”（sceneOnly）保留前文与目标语句，在资源扫描、复制和媒体准备前保守裁去后文，用合成注释边界结束 planning，不执行 end 清场。详见[sceneOnly 尾部边界](../scene-only-tail.md)。
+- ID 补全默认不覆盖已有 ID，多个在场候选时不猜测对白关联；角色出厂映射表及别名数据不改。共享素材显示可读库名，计时结果保留排队时的 sourceHash，允许来源的资源错误响应保留 CORS 头。
+- Opus / Vorbis 循环标签贯通探测、规划与混音；循环后重建采样时间戳，避免以补静音掩盖输出短缺。离线预演与渲染保持静音。
 
-仅自动 / 手动计时、没有行范围选择且具备可裁尾边界时应用。analysisOnly、range、BGM-fit、非空自定义 musicTimeline、手动语句切点引用省略后文，以及非 sceneOnly 等情况沿用旧路径；末场景保持原样。首次全文静态解析仍可能产生 HTML prefetch，不能据此承诺后文网络请求为零或实测显存降低。保持旧整数毫秒与帧取整，旧完整计划在不足一帧的尾部可能引入的后文声音不保证完全相同。
+## 安装与保存
 
-这不是通用剧情解释器或前文状态恢复重构，不改动源工程，也不扩大产品、宿主或引擎允许范围。提速取决于工程和运行环境，不承诺固定倍数。
+- 便携安装位于默认收起的高级设置，默认关闭；保留常规安装、便携路径迁移与已安装模式锁。普通及便携安装均写入当前 runtime-session，FFmpeg 更新有界重试并可恢复旧工具。
+- 新工程首次保存及空备份列表遇到 Nest 缺目录 500 时，先通过父目录 `dirInfo/isDir` 严格证明缺失。权限、畸形响应、文件占位和并发冲突仍拒绝操作，不吞未知错误。
 
 ## 验证范围
 
-| 项目 | 记录与边界 |
+详见[1.1.17 候选验收](../verification/terre-1.1.17-candidate-20261110.md)，各候选与实际文件分列。
+
+| 项目 | 结果与范围 |
 | --- | --- |
-| 表情安全 | 开发阶段完成已知插件的生命周期 / 缓存 / 错误合约及 9 项时钟回归；4.6.5 的逐文件 SHA 校验壳仅用于合约，不等同完整运行 |
-| sceneOnly 逻辑 | sceneOnly 独立实现阶段通过 C# 97 项及三线源码 overlay 检查、Node 99 项、官方 4.6.6 纯函数 oracle 和 1600 项 Bounds 对照，并经过独立审核；这些是源码与逻辑验证，不能代替移植后最终提交的原生验证。 |
-| sceneOnly 原生画面与声音 | 真实像素、PCM 和并发 renderer gate 按引擎分别记录在对应发行页的最终提交验收中，不以源码或旧候选结果替代；自动 anchor 策略、专有 Live2D SDK 像素及实测显存降低未验证 |
-| 配置弹窗 | 五类弹窗的读取、告知和异步失效范围如上；最终包实际入口验收单独记录 |
-| 旧候选实测 | 旧候选 [5f0de0de](https://github.com/Stakataka-3030/WebVideo-Plus/commit/5f0de0de20b0c89fd964eb43bbe1b4488e61705e)（[run 42624766204](https://github.com/Stakataka-3030/WebVideo-Plus/actions/runs/42624766204)）曾完成 550 行完整预演（1460.7 秒、runtimeParity=true）及 15 秒 / 450 帧静音渲染，未改动语句、未回退引擎。这些是合入本轮新增功能前的历史候选结果，不是最新最终包验收，也不代表完整长片音视频或其他宿主通过。 |
-| 旧候选 CLI | 两条 Terre 共 184 项、Craft 73 项 CLI 断言属于此前候选；不计作本轮最终包的安装、升级或恢复通过 |
-| 最终提交与发行包 | 精确提交、最终 CI、正式 EXE、UI / 安装 / 导出、公开下载与更新通道以[发行验收记录](https://github.com/Stakataka-3030/WebVideo-Plus/releases)为准；各项独立记录 |
+| 精确源码 CI | `8680cfdb3f0303317e2a2288ad1df79beb481ab7` 的 [run 42779189109](https://github.com/Stakataka-3030/WebVideo-Plus/actions/runs/42779189109) 成功；此前 b4212502 的测试编译清单失败保留，不记为通过 |
+| 原生回归 | WebGAL 4.6.4 JPEG readiness、captureFault、expressionContract、autosaveContract、autosave、scene-tail 通过；PNG 为 NA，冻结 4.6.4 产品不提供 PNG 兼容捕获 |
+| 本地 Node / Nest | 357 通过、0 失败、1 个默认 opt-in Nest 跳过，真实 Nest 合同另行通过；整个 npm-cache 测试文件未在本机运行 |
+| LL 真实模型成片 | 修复后的内部压缩包在隔离真实 LL 宿主完成同一双模型场景：720p30，500 帧，16.666667 秒，约 113.83 秒完成；全片解码与画面复核通过 |
+| 安装与恢复 | 旧内部候选完成真实 LL 安装、重装、受控损坏修复、卸载原宿主恢复与再安装；资源 timer 修复后的新包完成实际隔离升级/安装与 GUI 排队导出，未重跑整套卸载矩阵 |
+| 音频 | 8 组合成数值回归均为 96,000 样本。另以本地合成音频完成独立 LL 短场景：287 帧 / 9.566667 秒，AAC 同长，脉冲频率、两秒循环与五秒画面区间核验通过；不证明采样级停止或长片语音口型同步 |
 
-完整约 24 分钟含音视频导出、Craft 官方 NSIS 跨版本注册升级不列为通过。Terre 4.6.4 的旧候选合成配对样本仅完成 plan，render 被保护检查中止，MyGO 未运行；不能写为视觉验收通过。不得把 CLI、纯函数或合约结果替代真实宿主与最终安装器验收。
+LL 实测包为 `dist/WebVideo+-Setup-0.8.16-dev.exe`，97,357,824 字节，SHA-256 `84de89d14bebd1102a19dc1d26b17223ae3046f0cbb8e7a9a0e1ed4a08418549`，构建源码 `b4212502ab30b6437e1353f2be2c5cfaf78426e9`。`8680cfdb` 仅变更三份测试编译清单与文档，生产差异为空；不能将旧包改称由新 SHA 构建。
 
-## 构建与发行记录
+CI 保留的稳定通道安装器为 `WebVideo+-Setup-1.1.17.exe`，载荷身份记录 SHA-256 `b25beafc1d0b70ecca474f70ee8c556438d43c99f42d158ef84ec25d34f80ad9`。其 scene-tail 载荷核验不等同于该 EXE 的真实 LL 安装与运行验收，最终发行资产仍需取回、核验并记录。
 
-仅 CI 的依赖缓存补齐可回退至官方来源并按 SRI 校验，锁文件版本和内容不变，不执行 lifecycle 脚本，不改用户 npm 或网络设置。这属于构建可靠性，不是用户功能。
+## 保留的边界
 
-两条 Terre 维护线沿用固定的 BtbN FFmpeg 与 7-Zip，对应源码和许可获取说明见[第三方源码发行](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/third-party-sources-ffmpeg-20260930-7zip-25.00)。
+sceneOnly 仅在自动 / 手动计时、无行范围选择且具备可裁尾边界时应用。analysisOnly、range、BGM-fit、非空自定义 musicTimeline、手动切点引用后文等情况保守回退；末场景保持原样。前文恢复、预热、锚点和取整方式不变，全文解析仍可能产生 HTML prefetch，不能承诺后文请求为零或显存降低；不足一帧的尾部声音不保证完全相同。
 
-安装器文件名：`WebVideo+-Setup-1.1.17.exe`。最终源码提交、CI URL、文件版本、字节数、SHA-256、UI 验收和公开重下载结果见[发布页](https://github.com/Stakataka-3030/WebVideo-Plus/releases)，旧候选记录不作为这些字段的默认值。4.6.4 与 MyGO 的实际宿主验收及兼容更新推荐分别记录。
+真实双模型样本的旧 demo 缺两个 lib 文件及默认 motion，修补仅发生在隔离输入副本；不宣称原 demo 开箱即用。旧包同输入两次 120 秒 glTF 超时保留为失败，修复未放宽屏障。当前最终包的 MyGO 真实宿主、完整约 24 分钟音视频、专有 Live2D SDK 像素、自动 anchor 策略和广泛模型库覆盖未完成，不承诺固定提速倍数。LL 接入仅在本线，Terre 4.6.6 和 Craft 的通用移植不包含 LL 引擎。
+
+## 致谢与构建材料
+
+感谢 [NijiharaTsubasa](https://github.com/NijiharaTsubasa) 的 LoveLive 适配工作，以及 planning 自动存档性能热点反馈与排障线索。
+
+仅 CI 的依赖缓存补齐可回退至官方来源并按 SRI 校验，锁文件不变，不执行 lifecycle 脚本，不改用户 npm 或网络设置。固定 BtbN FFmpeg 与 7-Zip 的源码及许可获取说明见[第三方源码发行](https://github.com/Stakataka-3030/WebVideo-Plus/releases/tag/third-party-sources-ffmpeg-20260930-7zip-25.00)。

@@ -1,14 +1,20 @@
 # 版本记录
 
-## 1.1.17
+## 1.1.17（未发布候选）
 
 安装器 1.1.17.0，导出内核 0.6.66。开发阶段回归、旧候选证据与最终发行包验收分开记录，详见[发行说明](docs/releases/RELEASE_NOTES_1.1.17.md)。
 
+- 整合 LoveLive 适配，贯通单 GLB / 组合角色、动作、共享资源、扫描和导出；普通 WebGAL / MyGO 不进入 LL 专属 glTF 等待。
+- 修复任务副本中三个 LL 资源准备计时器与剧情时钟冲突造成的 120 秒就绪超时，保留屏障和未知形态拒绝。真实双模型短片及安装器来源见[候选验收](docs/verification/terre-1.1.17-candidate-20261110.md)。
+- ID 补全默认保留已有 ID，多候选不猜选；角色出厂映射及别名数据不改。共享标签、sourceHash、资源错误 CORS 与离线静音修复一并纳入。
+- Opus / Vorbis 循环标签贯通导出，循环后重建采样时间戳，避免补静音掩盖输出短缺。
+- 便携安装移至默认折叠的高级设置且默认关闭，已安装模式锁保留；普通 / 便携 runtime-session 与 FFmpeg 更新重试恢复补齐。
+- 修复 Nest 首次制作配置保存与空备份列表的缺目录 500；仅以父目录 `dirInfo/isDir` 证明缺失，不吞未知错误。
 - 补齐导出副本中的 Live2D 表情生命周期保护、当前请求等待和真实 20 秒超时，保留失败缓存重选与原生重试。详见[安全说明](docs/LIVE2D-EXPRESSION-SAFETY.md)。
 - 导出副本跳过游戏自动快速存档，正常游戏与手动存档保留。详见[自动存档修复](docs/AUTOSAVE-PLANNING.md)。
 - 视频、舞台、对话框、音轨和 SRT 五类弹窗打开时仅被动查看现有预览状态，不自动重开预览，也不把默认速度标为实时读取。明确重读或真正提交时仍读取实际设置；需要打开预览前在顶部显示告知。关闭弹窗或切换项目后丢弃旧异步状态，POST 前失效不入队；已经发出的 POST 不承诺取消。
 - sceneOnly 在保留前文和目标语句的基础上裁去后文，以合成注释边界结束 planning；保持原恢复、预热、锚点和取整，保守回退条件及 HTML prefetch / 尾部音频限制见[说明](docs/scene-only-tail.md)。
-- 感谢 [NijiharaTsubasa](https://github.com/NijiharaTsubasa) 提供 planning 阶段自动存档性能热点的反馈及禁用后加速的验证线索。
+- 感谢 [NijiharaTsubasa](https://github.com/NijiharaTsubasa) 的 LoveLive 适配工作，以及 planning 阶段自动存档性能热点反馈与排障线索。
 
 ## 1.1.16
 

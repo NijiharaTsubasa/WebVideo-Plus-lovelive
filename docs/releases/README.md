@@ -1,6 +1,6 @@
 # 发行说明
 
-- [1.1.17 · 改动与验证范围](RELEASE_NOTES_1.1.17.md)
+- [1.1.17 · 未发布候选，含 LoveLive 适配](RELEASE_NOTES_1.1.17.md)
 - [1.1.16](RELEASE_NOTES_1.1.16.md)
 - [1.1.15](RELEASE_NOTES_1.1.15.md)
 

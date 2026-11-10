@@ -1,5 +1,7 @@
 # 4.6.4 / LL local candidate: offline background verification
 
+> 历史阶段记录：以下“未运行 / 未 CI / 未推送”等状态只适用于当时的候选和测试轮次，不是当前发布状态。后续资源 timer 修复、精确源码 CI、真实 LL 安装与成片结果见[当前候选验收](terre-1.1.17-candidate-20261110.md)；旧失败及旧包身份仍保留。
+
 Date: 2026-11-10. Branch: `port/portable-advanced-464-20261110`, based on `61f78cc` (advanced-only portable checkbox over `efee2de`). Local unpublished candidate only; no version changes, network, npm installation, push, CI run or publication.
 
 ## Changes after the UI correction
